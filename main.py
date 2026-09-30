@@ -1,27 +1,18 @@
 #!/usr/bin/env python3
-# -*- 编码：utf-8 -*-
-"""
-江西省考每日备考资料 - GitHub Actions 云端版
-功能：抓取人民日报评论 + 时政热点 → 生成PDF → 推送到企业微信
-"""
-
+# -*- coding: utf-8 -*-
 import os
 import sys
 import requests
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 
-# ==================== 配置 ====================
-
 WECOM_WEBHOOK = os.environ.get('WECOM_WEBHOOK', '')
 EXAM_NAME = '2027年江西省考'
 EXAM_DATE = datetime(2027, 3, 25)
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 }
-
-# ==================== 日期处理 ====================
 
 def get_target_date():
     today = datetime.now()
@@ -36,103 +27,76 @@ def format_date(date):
     days_left = (EXAM_DATE - date).days
     return date_str, date_cn, weekday, days_left
 
-# ==================== 抓取人民日报评论 ====================
-
-def fetch_people_comments(target_date):
+def fetch_comments():
     comments = []
     try:
         url = 'http://opinion.people.com.cn/GB/8213/49160/49219/index.html'
         resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.encoding = resp.apparent_encoding or 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
-        links = soup.find_all('a', href=True)
         count = 0
-        for link in links:
+        for link in soup.find_all('a', href=True):
             href = link.get('href', '')
             text = link.get_text(strip=True)
             if '/n1/' in href and 'c461529' in href and text and len(text) > 5 and count < 3:
                 full_url = 'http://opinion.people.com.cn' + href if href.startswith('/') else href
-                summary = fetch_article_summary(full_url)
-                comments.append({'title': text, 'column': '人民时评', 'url': full_url, 'summary': summary})
+                comments.append({'title': text, 'column': '人民时评', 'url': full_url, 'summary': fetch_summary(full_url)})
                 count += 1
-        url2 = 'http://opinion.people.com.cn/GB/436867/index.html'
         try:
+            url2 = 'http://opinion.people.com.cn/GB/436867/index.html'
             resp2 = requests.get(url2, headers=HEADERS, timeout=15)
             resp2.encoding = resp2.apparent_encoding or 'gbk'
             soup2 = BeautifulSoup(resp2.text, 'html.parser')
-            links2 = soup2.find_all('a', href=True)
-            for link in links2:
+            for link in soup2.find_all('a', href=True):
                 href = link.get('href', '')
                 text = link.get_text(strip=True)
                 if '/n1/' in href and 'c436867' in href and text and len(text) > 5:
                     full_url = 'http://opinion.people.com.cn' + href if href.startswith('/') else href
-                    summary = fetch_article_summary(full_url)
-                    comments.append({'title': text, 'column': '人民锐评', 'url': full_url, 'summary': summary})
+                    comments.append({'title': text, 'column': '人民锐评', 'url': full_url, 'summary': fetch_summary(full_url)})
                     break
         except Exception as e:
-            print(f'抓取人民锐评列表失败: {e}')
+            print('fail ruiping: ' + str(e))
     except Exception as e:
-        print(f'抓取人民时评列表失败: {e}')
+        print('fail shiping: ' + str(e))
     return comments[:4]
 
-def fetch_article_summary(url):
+def fetch_summary(url):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.encoding = resp.apparent_encoding or 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
-        content_div = soup.find('div', class_='rm_txt_con') or soup.find('div', id='rwb_zw') or soup.find('div', class_='article-content')
-        if content_div:
-            paragraphs = content_div.find_all('p')
-            text = ''.join([p.get_text(strip=True) for p in paragraphs[:3] if p.get_text(strip=True)])
+        div = soup.find('div', class_='rm_txt_con') or soup.find('div', id='rwb_zw')
+        if div:
+            ps = div.find_all('p')
+            text = ''.join([p.get_text(strip=True) for p in ps[:3] if p.get_text(strip=True)])
             if len(text) > 100:
                 return text[:150] + '...'
         return '点击查看原文'
     except:
         return '点击查看原文'
 
-# ==================== 抓取时政热点 ====================
-
-def fetch_news(target_date):
+def fetch_news():
     news_list = []
-    try:
-        url = 'https://www.gov.cn/yaowen.htm'
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.encoding = 'utf-8'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        items = soup.find_all('li')
-        for item in items[:15]:
-            link = item.find('a')
-            if link:
-                title = link.get_text(strip=True)
-                href = link.get('href', '')
-                if title and len(title) > 10:
-                    full_url = href if href.startswith('http') else 'https://www.gov.cn/' + href.lstrip('/')
-                    news_list.append({'title': title, 'url': full_url, 'source': '中国政府网', 'category': '国内要闻'})
-    except Exception as e:
-        print(f'抓取中国政府网失败: {e}')
     try:
         url = 'http://politics.people.com.cn/'
         resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.encoding = resp.apparent_encoding or 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
-        links = soup.find_all('a', href=True)
-        for link in links[:40]:
+        for link in soup.find_all('a', href=True)[:40]:
             title = link.get_text(strip=True)
             href = link.get('href', '')
-            if title and len(title) > 12 and ('/n1/' in href or '/GB/' in href):
+            if title and len(title) > 12 and '/n1/' in href:
                 full_url = 'http://politics.people.com.cn' + href if href.startswith('/') else href
                 news_list.append({'title': title, 'url': full_url, 'source': '人民网', 'category': '时政要闻'})
     except Exception as e:
-        print(f'抓取人民网时政失败: {e}')
+        print('fail news: ' + str(e))
     seen = set()
-    unique_news = []
-    for news in news_list:
-        if news['title'] not in seen:
-            seen.add(news['title'])
-            unique_news.append(news)
-    return unique_news[:12]
-
-# ==================== 生成PDF ====================
+    unique = []
+    for n in news_list:
+        if n['title'] not in seen:
+            seen.add(n['title'])
+            unique.append(n)
+    return unique[:12]
 
 def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, output_path):
     from reportlab.lib.pagesizes import A4
@@ -142,19 +106,14 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER
 
-    font_registered = False
-    font_paths = [
-        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-        'C:/Windows/Fonts/msyh.ttc',
-    ]
-    for fp in font_paths:
+    font_ok = False
+    for fp in ['/usr/share/fonts/truetype/wqy/wqy-microhei.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', 'C:/Windows/Fonts/msyh.ttc']:
         if os.path.exists(fp):
             try:
-                pdfmetrics.registerFont(TTFont('ChineseFont', fp))
-                font_registered = True
+                pdfmetrics.registerFont(TTFont('CN', fp))
+                font_ok = True
                 break
             except:
                 continue
@@ -165,39 +124,38 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     TEXT_GRAY = HexColor('#5f6368')
 
     styles = getSampleStyleSheet()
-    cover_title = ParagraphStyle('CoverTitle', parent=styles['Title'], fontName='ChineseFont', fontSize=26, leading=36, alignment=TA_CENTER, textColor=PRIMARY)
-    cover_subtitle = ParagraphStyle('CoverSubtitle', parent=styles['Normal'], fontName='ChineseFont', fontSize=14, leading=22, alignment=TA_CENTER, textColor=TEXT_GRAY)
-    cover_date = ParagraphStyle('CoverDate', parent=styles['Normal'], fontName='ChineseFont', fontSize=20, leading=30, alignment=TA_CENTER, textColor=TEXT_DARK)
-    h1 = ParagraphStyle('H1', parent=styles['Heading1'], fontName='ChineseFont', fontSize=18, leading=28, textColor=PRIMARY, spaceAfter=6)
-    h2 = ParagraphStyle('H2', parent=styles['Heading2'], fontName='ChineseFont', fontSize=14, leading=22, textColor=TEXT_DARK, spaceAfter=4)
-    body = ParagraphStyle('Body', parent=styles['Normal'], fontName='ChineseFont', fontSize=10.5, leading=18, textColor=TEXT_DARK, firstLineIndent=21)
-    bullet = ParagraphStyle('Bullet', parent=styles['Normal'], fontName='ChineseFont', fontSize=10.5, leading=18, textColor=TEXT_DARK, leftIndent=15)
-    table_header = ParagraphStyle('TableHeader', parent=styles['Normal'], fontName='ChineseFont', fontSize=10, leading=16, textColor=white, alignment=TA_CENTER)
-    table_cell = ParagraphStyle('TableCell', parent=styles['Normal'], fontName='ChineseFont', fontSize=9.5, leading=15, textColor=TEXT_DARK, alignment=TA_CENTER)
+    s_cover_title = ParagraphStyle('ct', parent=styles['Title'], fontName='CN', fontSize=26, leading=36, alignment=TA_CENTER, textColor=PRIMARY)
+    s_cover_sub = ParagraphStyle('cs', parent=styles['Normal'], fontName='CN', fontSize=14, leading=22, alignment=TA_CENTER, textColor=TEXT_GRAY)
+    s_cover_date = ParagraphStyle('cd', parent=styles['Normal'], fontName='CN', fontSize=20, leading=30, alignment=TA_CENTER, textColor=TEXT_DARK)
+    s_h1 = ParagraphStyle('h1', parent=styles['Heading1'], fontName='CN', fontSize=18, leading=28, textColor=PRIMARY, spaceAfter=6)
+    s_h2 = ParagraphStyle('h2', parent=styles['Heading2'], fontName='CN', fontSize=14, leading=22, textColor=TEXT_DARK, spaceAfter=4)
+    s_body = ParagraphStyle('bd', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, firstLineIndent=21)
+    s_bullet = ParagraphStyle('bl', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, leftIndent=15)
+    s_th = ParagraphStyle('th', parent=styles['Normal'], fontName='CN', fontSize=10, leading=16, textColor=white, alignment=TA_CENTER)
+    s_td = ParagraphStyle('td', parent=styles['Normal'], fontName='CN', fontSize=9.5, leading=15, textColor=TEXT_DARK, alignment=TA_CENTER)
 
-    doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm, title=f'江西省考每日备考资料 - {date_cn}', author='江西省考备考助手')
+    doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm, title='JiangxiGK Daily', author='GK Helper')
     story = []
 
-    # 封面
     story.append(Spacer(1, 40*mm))
-    story.append(Paragraph('📚 江西省考每日备考资料', cover_title))
+    story.append(Paragraph('江西省考每日备考资料', s_cover_title))
     story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(EXAM_NAME, cover_subtitle))
+    story.append(Paragraph(EXAM_NAME, s_cover_sub))
     story.append(Spacer(1, 12*mm))
-    story.append(Paragraph(f'{date_cn} {weekday}', cover_date))
+    story.append(Paragraph(date_cn + ' ' + weekday, s_cover_date))
     story.append(Spacer(1, 4*mm))
-    story.append(Paragraph(f'⏰ 距笔试还有 {days_left} 天', cover_subtitle))
+    story.append(Paragraph('距笔试还有 ' + str(days_left) + ' 天', s_cover_sub))
     story.append(Spacer(1, 15*mm))
 
-    overview_data = [
-        [Paragraph('人民日报评论', table_header), Paragraph('时政热点', table_header), Paragraph('新闻来源', table_header)],
-        [Paragraph(f'{len(comments)}篇', table_cell), Paragraph(f'{len(news_list)}条', table_cell), Paragraph('人民网/新华网', table_cell)],
+    ov = [
+        [Paragraph('人民日报评论', s_th), Paragraph('时政热点', s_th), Paragraph('新闻来源', s_th)],
+        [Paragraph(str(len(comments)) + '篇', s_td), Paragraph(str(len(news_list)) + '条', s_td), Paragraph('人民网/新华网', s_td)],
     ]
-    table = Table(overview_data, colWidths=[50*mm, 50*mm, 50*mm])
-    table.setStyle(TableStyle([
+    t = Table(ov, colWidths=[50*mm, 50*mm, 50*mm])
+    t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
         ('TEXTCOLOR', (0, 0), (-1, 0), white),
-        ('FONTNAME', (0, 0), (-1, -1), 'ChineseFont'),
+        ('FONTNAME', (0, 0), (-1, -1), 'CN'),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 10),
@@ -205,43 +163,40 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
         ('BACKGROUND', (0, 1), (-1, 1), BG_BLUE),
         ('GRID', (0, 0), (-1, -1), 1, white),
     ]))
-    story.append(table)
+    story.append(t)
     story.append(Spacer(1, 25*mm))
-    story.append(Paragraph('每天进步一点点，一次上岸江西 💪', cover_subtitle))
+    story.append(Paragraph('每天进步一点点，一次上岸江西', s_cover_sub))
     story.append(PageBreak())
 
-    # 人民日报评论
-    story.append(Paragraph('📰 人民日报评论', h1))
+    story.append(Paragraph('一、人民日报评论', s_h1))
     story.append(Spacer(1, 3*mm))
-    for i, comment in enumerate(comments, 1):
-        story.append(Paragraph(f'{i}. {comment["title"]}', h2))
-        story.append(Paragraph(f'<font color="#5f6368">栏目：{comment["column"]} | <a href="{comment["url"]}" color="#1a73e8">查看原文</a></font>', bullet))
+    for i, c in enumerate(comments, 1):
+        story.append(Paragraph(str(i) + '. ' + c['title'], s_h2))
+        story.append(Paragraph('<font color="#5f6368">栏目：' + c['column'] + ' | <a href="' + c['url'] + '" color="#1a73e8">查看原文</a></font>', s_bullet))
         story.append(Spacer(1, 2*mm))
-        story.append(Paragraph(comment['summary'], body))
+        story.append(Paragraph(c['summary'], s_body))
         story.append(Spacer(1, 4*mm))
     story.append(PageBreak())
 
-    # 时政热点
-    story.append(Paragraph('🔔 时政热点', h1))
+    story.append(Paragraph('二、时政热点', s_h1))
     story.append(Spacer(1, 3*mm))
-    categories = {}
-    for news in news_list:
-        cat = news['category']
-        if cat not in categories:
-            categories[cat] = []
-        categories[cat].append(news)
-    for cat, items in categories.items():
-        story.append(Paragraph(f'▸ {cat}', h2))
+    cats = {}
+    for n in news_list:
+        cat = n['category']
+        if cat not in cats:
+            cats[cat] = []
+        cats[cat].append(n)
+    for cat, items in cats.items():
+        story.append(Paragraph(cat, s_h2))
         story.append(Spacer(1, 2*mm))
-        for j, news in enumerate(items, 1):
-            story.append(Paragraph(f'{j}. {news["title"]}', bullet))
-            story.append(Paragraph(f'<font color="#5f6368" size=9>来源：{news["source"]} | <a href="{news["url"]}" color="#1a73e8">查看原文</a></font>', bullet))
+        for j, n in enumerate(items, 1):
+            story.append(Paragraph(str(j) + '. ' + n['title'], s_bullet))
+            story.append(Paragraph('<font color="#5f6368" size=9>来源：' + n['source'] + ' | <a href="' + n['url'] + '" color="#1a73e8">查看原文</a></font>', s_bullet))
             story.append(Spacer(1, 2*mm))
         story.append(Spacer(1, 3*mm))
     story.append(PageBreak())
 
-    # 学习小贴士
-    story.append(Paragraph('💡 每日学习小贴士', h1))
+    story.append(Paragraph('三、学习小贴士', s_h1))
     story.append(Spacer(1, 5*mm))
     tips = [
         '1. 精读2篇人民日报评论，摘抄金句，分析论证结构',
@@ -251,145 +206,124 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
         '5. 重要纪念日和数字类考点要重点记忆',
     ]
     for tip in tips:
-        story.append(Paragraph(tip, bullet))
+        story.append(Paragraph(tip, s_bullet))
         story.append(Spacer(1, 3*mm))
     story.append(Spacer(1, 10*mm))
-    story.append(Paragraph('---', body))
+    story.append(Paragraph('---', s_body))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph(f'<font color="#5f6368" size=9>本资料由 GitHub Actions 自动生成 | 数据来源：人民网、新华网、中国政府网</font>', bullet))
+    story.append(Paragraph('<font color="#5f6368" size=9>本资料由 GitHub Actions 自动生成 | 数据来源：人民网、中国政府网</font>', s_bullet))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph(f'<font color="#5f6368" size=9>生成时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</font>', bullet))
+    story.append(Paragraph('<font color="#5f6368" size=9>生成时间：' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '</font>', s_bullet))
 
     doc.build(story)
-    print(f'PDF生成成功: {output_path}')
+    print('PDF OK: ' + output_path)
     return True
 
-# ==================== 推送到企业微信 ====================
-
-def send_wecom_text(content):
+def send_text(content):
     if not WECOM_WEBHOOK:
-        print('未配置 WECOM_WEBHOOK，跳过推送')
+        print('no webhook, skip')
         return False
     try:
         data = {'msgtype': 'markdown', 'markdown': {'content': content}}
-        resp = requests.post(WECOM_WEBHOOK, json=data, timeout=10)
-        result = resp.json()
-        如果结果.获取('errcode') == 0:
-            print('文字消息推送成功')
+        r = requests.post(WECOM_WEBHOOK, json=data, timeout=10)
+        res = r.json()
+        if res.get('errcode') == 0:
+            print('text ok')
             return True
         else:
-            print(f'文字消息推送失败: {result}')
+            print('text fail: ' + str(res))
             return False
     except Exception as e:
-        print(f'文字消息推送异常: {e}')
+        print('text error: ' + str(e))
         return False
 
-def send_wecom_file(file_path):
+def send_file(file_path):
     if not WECOM_WEBHOOK:
-        print('未配置 WECOM_WEBHOOK，跳过推送')
+        print('no webhook, skip')
         return False
     try:
         key = WECOM_WEBHOOK.split('key=')[-1] if 'key=' in WECOM_WEBHOOK else ''
         if not key:
-            print('无法提取 webhook key')
+            print('no key')
             return False
-        upload_url = f'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key={key}&type=file'
+        upload_url = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=' + key + '&type=file'
         with open(file_path, 'rb') as f:
             files = {'media': (os.path.basename(file_path), f)}
-            resp = requests.post(upload_url, files=files, timeout=30)
-            result = resp.json()
-        如果结果.获取('errcode') == 0:
-            media_id = 结果.获取('media_id')
-            data = {'msgtype': 'file', 'file': {'media_id': media_id}}
-            resp2 = requests.post(WECOM_WEBHOOK, json=data, timeout=10)
-            result2 = resp2.json()
-            if result2.get('errcode') == 0:
-                print('文件推送成功')
+            r = requests.post(upload_url, files=files, timeout=30)
+            res = r.json()
+        if res.get('errcode') == 0:
+            mid = res.get('media_id')
+            data = {'msgtype': 'file', 'file': {'media_id': mid}}
+            r2 = requests.post(WECOM_WEBHOOK, json=data, timeout=10)
+            res2 = r2.json()
+            if res2.get('errcode') == 0:
+                print('file ok')
                 return True
             else:
-                print(f'文件推送失败: {result2}')
+                print('file fail: ' + str(res2))
                 return False
         else:
-            print(f'文件上传失败: {result}')
+            print('upload fail: ' + str(res))
             return False
     except Exception as e:
-        print(f'文件推送异常: {e}')
+        print('file error: ' + str(e))
         return False
 
-# ==================== 主函数 ====================
-
 def main():
-    print('=' * 50)
-    print('江西省考每日备考资料 - 云端版')
-    print('=' * 50)
+    print('=' * 40)
+    print('JiangxiGK Daily Report')
+    print('=' * 40)
 
     target_date = get_target_date()
     date_str, date_cn, weekday, days_left = format_date(target_date)
-    print(f'\n目标日期: {date_cn} {weekday}')
-    print(f'距{EXAM_NAME}笔试还有 {days_left} 天')
+    print('Date: ' + date_cn + ' ' + weekday)
+    print('Days left: ' + str(days_left))
 
-    output_dir = './output'
-    os.makedirs(output_dir, exist_ok=True)
-    pdf_path = os.path.join(output_dir, f'每日备考资料_{date_str}.pdf')
+    os.makedirs('./output', exist_ok=True)
+    pdf_path = './output/每日备考资料_' + date_str + '.pdf'
 
-    print('\n[1/4] 抓取人民日报评论...')
-    comments = fetch_people_comments(target_date)
-    print(f'  抓取到 {len(comments)} 篇评论')
-    用于C的注释：
-        print(f'    - [{c["column"]}] {c["title"][:30]}')
+    print('\n[1/4] Fetch comments...')
+    comments = fetch_comments()
+    print('  Got ' + str(len(comments)) + ' comments')
+    for c in comments:
+        print('    - ' + c['title'][:30])
 
-    print('\n[2/4] 抓取时政热点...')
-    news_list = fetch_news(target_date)
-    print(f'  抓取到 {len(news_list)} 条新闻')
+    print('\n[2/4] Fetch news...')
+    news_list = fetch_news()
+    print('  Got ' + str(len(news_list)) + ' news')
     for n in news_list[:5]:
-        打印(f'    - {n["title"][:30]}...')
+        print('    - ' + n['title'][:30])
 
-    print('\n[3/4] 生成PDF...')
-    success = generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, pdf_path)
-    if not success:
-        打印('PDF生成失败!')
+    print('\n[3/4] Generate PDF...')
+    ok = generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, pdf_path)
+    if not ok:
+        print('PDF failed!')
         sys.exit(1)
-    file_size = os.path.getsize(pdf_path)
-    print(f'  PDF大小: {file_size/1024:.1f} KB')
+    fsize = os.path.getsize(pdf_path)
+    print('  Size: ' + str(fsize/1024) + ' KB')
 
     print('\n[4/4] 推送到企业微信...')
-    text_content = f"""## 📚 江西省考每日备考资料 - {date_cn} {weekday}
+    md = '## 江西省考每日备考资料 - ' + date_cn + ' ' + weekday + '\n\n'
+    md += '距' + EXAM_NAME + '笔试还有 **' + str(days_left) + '** 天\n\n'
+    md += '---\n\n'
+    md += '### 今日内容\n\n'
+    md += '- 人民日报评论：' + str(len(comments)) + '篇精选\n'
+    md += '- 时政热点：' + str(len(news_list)) + '条重要新闻\n\n'
+    md += '---\n\n'
+    md += '### 学习建议\n\n'
+    md += '1. 精读2篇人民日报评论，摘抄金句\n'
+    md += '2. 浏览时政新闻，标注考点\n'
+    md += '3. 结合热点思考申论写作角度\n\n'
+    md += '---\n\n'
+    md += 'PDF已发送，请查收附件。\n\n'
+    md += '> 每天进步一点点，一次上岸江西！\n'
 
-⏰ 距{EXAM_NAME}笔试还有 **{days_left}** 天
+    send_text(md)
+    send_file(pdf_path)
 
----
-
-### 📰 今日内容
-
-- **人民日报评论**：{len(comments)}篇精选
-- **时政热点**：{len(news_list)}条重要新闻
-- **学习建议**：精读评论 + 浏览热点 + 金句积累
-
----
-
-### 💡 今日学习建议
-
-1. 精读2篇人民日报评论，摘抄金句
-2. 浏览时政新闻，标注考点（数字/会议/政策）
-3. 结合热点思考申论写作角度
-4. 积累3-5个金句
-
----
-
-### 今日PDF已发送，请查收附件
-
-内容包含：人民日报评论、时政热点、学习小贴士
-
----
-
-> 💪 每天进步一点点，一次上岸江西！
-"""
-    send_wecom_text(text_content)
-    send_wecom_file(pdf_path)
-
-    print('\n' + '=' * 50)
-    print('全部完成!')
-    print('=' * 50)
+    print('\n' + '=' * 40)
+    print('All done!')
+    print('=' * 40)
 
 if __name__ == '__main__':
-    ()
+    main()
