@@ -1,41 +1,24 @@
-name: 每日备考资料
+名称: 每日备考资料
 
-on:
+开启:
   schedule:
     - cron: '0 23 * * *'
-  workflow_dispatch:
+ workflow_dispatch:
 
 jobs:
   daily-report:
     runs-on: ubuntu-latest
-    
 步骤:
-      - 名称: 检出
-: actions/checkout@v4
-      
-      - 名称: 设置 Python
-使用: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         使用:
           Python 版本: '3.11'
-      
-      - 名称: 安装中文字体
-        运行: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-wqy-microhei
-      
-      - 名称: 安装依赖
-        运行: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: 生成备考资料PDF
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-wqy-microhei
+      - run: pip install -r requirements.txt
+      - run: python main.py
         环境:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
-        运行: |
-          python main.py
-      
-      - 名称: 上传PDF工件
-        uses: actions/upload-artifact@v4
+      - 使用: actions/upload-artifact@v4
         如果: 始终()
         使用:
           名称: 每日备考资料
