@@ -450,14 +450,14 @@ def main():
 
     print('\n[3/4] Generate PDF...')
     ok = generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, pdf_path)
-    如果 不正确：
+    if not ok:
         print('PDF failed!')
         sys.exit(1)
     fsize = os.path.getsize(pdf_path)
-('  大小：' + str(四舍五入(文件大小/1024, 1)) + ' KB')
+    print('  Size: ' + str(round(fsize/1024, 1)) + ' KB')
 
-    print('\n[4/4] 推送到企业微信...')
-    总黄金数 = sum(len(c['golden_sentences']) for c in comments)
+    print('\n[4/4] Push to WeCom...')
+    total_golden = sum(len(c['golden_sentences']) for c in comments)
     md = '## 📚 江西省考每日备考资料 - ' + date_cn + ' ' + weekday + '\n\n'
     md += '⏰ 距' + EXAM_NAME + '笔试还有 **' + str(days_left) + '** 天\n\n'
     md += '---\n\n'
