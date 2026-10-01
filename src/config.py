@@ -160,3 +160,47 @@ class OutputConfig:
 def get_wecom_webhook() -> str:
     """从环境变量读取企业微信 Webhook URL"""
     return os.environ.get("WECOM_WEBHOOK", "")
+
+
+# ========== AI 增强配置 ==========
+@dataclass
+class AIConfig:
+    """LiteLLM 统一接入配置。
+
+    LiteLLM 的 model 字段必须带 provider 前缀，以让 SDK 正确识别：
+      - DeepSeek:      deepseek/deepseek-chat
+      - 硅基流动:      openai/deepseek-chat, base_url=https://api.siliconflow.cn/v1
+      - 通义千问:      qwen/qwen-plus
+      - 火山方舟:      openai/ark-code-latest, base_url=https://ark.cn-beijing.volces.com/api/v3
+      - 阿里 DashScope: qwen/qwen-turbo, base_url=https://dashscope.aliyuncs.com/compatible-mode/v1
+      - 本地 Ollama:   ollama/qwen2.5:7b, base_url=http://localhost:11434
+
+    API Key 只从环境变量读取（AI_API_KEY 或各 provider 自己的，如 DEEPSEEK_API_KEY）。
+    """
+    # 开关：None = 自动（有 Key 才启用），True = 强制启用，False = 强制禁用
+    enabled: bool | None = None
+    # model 必须带 provider 前缀（LiteLLM 要求）
+    model: str = os.environ.get("AI_MODEL", "deepseek/deepseek-chat")
+    # 可选：自定义 base_url（硅基流动等兼容网关用）
+    base_url: str = os.environ.get("AI_BASE_URL", "")
+    # 调用超时秒数
+    timeout: int = 30
+    # 温度（0=稳定，1=创意）
+    temperature: float = 0.3
+    # 单篇最大输入字符（防止 token 爆）
+    max_input_chars_per_article: int = 4000
+    # 最多处理多少条新闻做考点提炼
+    max_news_for_points: int = 10
+    # 申论素材的目标字数
+    target_shenlun_chars: int = 300
+
+
+def get_ai_key() -> str:
+    """从环境变量读取 AI API Key。支持多种命名。"""
+    for name in ("AI_API_KEY", "DEEPSEEK_API_KEY", "SILICONFLOW_API_KEY",
+                 "DASHSCOPE_API_KEY", "ARK_API_KEY", "OPENAI_API_KEY"):
+        val = os.environ.get(name, "")
+        if val:
+            return val
+    return ""
+
