@@ -13,6 +13,13 @@ from src.utils import log, close_session
 
 def main() -> int:
     try:
+        # 先加载 GUI 保存的本地配置（如果存在），让命令行也能用
+        try:
+            from gui_config import load_env_from_config
+            load_env_from_config()
+        except ImportError:
+            pass  # GUI 模块不存在时忽略（GitHub Actions 环境）
+
         # lazy import 避免启动时就拉一堆依赖
         from src.main import run
         run()
