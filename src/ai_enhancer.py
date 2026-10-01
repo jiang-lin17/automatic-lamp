@@ -1,4 +1,4 @@
-"""AI 增强模块 — 基于 LiteLLM 统一接入多家大模型。
+﻿"""AI 增强模块 — 基于 LiteLLM 统一接入多家大模型。
 
 4 个功能：
   1. 新闻考点提炼 (extract_exam_points_from_news)
@@ -17,10 +17,51 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from .config import AIConfig, get_ai_key
 from .utils import log
+
+
+# ========== JSON 提取工具 ==========
+
+_JSON_STRICT_SUFFIX = "请严格以 JSON 格式返回，不要输出多余解释文字或 markdown 代码块。"
+
+
+def _extract_json(text: str) -> Optional[dict]:
+    """从任意文本中提取第一个完整的 JSON 对象。
+
+    各家模型/网关的 JSON mode 行为不一致：
+    - DeepSeek / 硅基流动: response_format 强制生效
+    - 火山方舟 Doubao: 不支持 response_format，即使强制也可能返回带前缀的文本
+    - 通义千问: 部分支持，偶尔会输出解释文字再给 JSON
+    所以我们自己兜底：找第一个成对的 {}。
+    """
+    if not text:
+        return None
+    # 先尝试直接 parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # 找第一个完整的 {...} 块（支持嵌套）
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start != -1:
+                chunk = text[start : i + 1]
+                try:
+                    return json.loads(chunk)
+                except json.JSONDecodeError:
+                    start = -1
+    return None
 
 
 # ========== 连接探测 ==========
@@ -79,6 +120,14 @@ def _call_llm(system_prompt: str, user_prompt: str,
         return None
 
     try:
+        # 自动注入 JSON 格式要求（在 prompt 里引导，比 response_format 兼容性好）
+        if expect_json:
+            if _JSON_STRICT_SUFFIX not in system_prompt:
+                system_prompt = system_prompt + _JSON_STRICT_SUFFIX
+            # 在 user prompt 末尾也加个保险
+            if "JSON" not in user_prompt and "json" not in user_prompt:
+                user_prompt = user_prompt + "\n\n请以 JSON 格式返回结果。"
+
         kwargs: Dict[str, Any] = dict(
             model=cfg.model,
             messages=[
@@ -93,8 +142,10 @@ def _call_llm(system_prompt: str, user_prompt: str,
         if cfg.base_url:
             kwargs["base_url"] = cfg.base_url
 
-        if expect_json:
-            kwargs["response_format"] = {"type": "json_object"}
+        # 注意：不使用 response_format={"type":"json_object"} — 不是所有 provider 都支持
+        # （火山方舟 / 通义 / Ollama 的某些模型会直接报 400）。
+        # 改为在 prompt 里引导 + 拿到后 parse，parse 失败就兜底。
+        # 如果必须强制 JSON，可自行在 system_prompt 末尾加 "请严格以 JSON 格式返回，不要输出多余文字"。
 
         log.debug("AI 调用 model=%s base_url=%s", cfg.model, cfg.base_url or "(默认)")
         resp = litellm.completion(**kwargs)
@@ -105,7 +156,6 @@ def _call_llm(system_prompt: str, user_prompt: str,
         content = content.strip()
         if content.startswith("```"):
             lines = content.split("\n")
-            # 去掉首尾 ``` 行
             content = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
         return content.strip()
     except Exception as e:
@@ -146,7 +196,7 @@ def extract_exam_points_from_news(news_list: List[Dict[str, Any]],
         raw = _call_llm(system, user, cfg)
         if raw:
             try:
-                data = json.loads(raw)
+                data = _extract_json(raw)
                 points = data.get("exam_points", [])
                 points = [p.strip() for p in points if p.strip()]
             except json.JSONDecodeError:
@@ -204,7 +254,7 @@ def ai_select_golden(comments: List[Dict[str, Any]],
         ai_comment: str = ""
         if raw:
             try:
-                data = json.loads(raw)
+                data = _extract_json(raw)
                 ai_golden = [g.strip() for g in data.get("ai_golden", []) if g.strip()][:3]
                 ai_comment = data.get("ai_comment", "").strip()[:60]
             except json.JSONDecodeError:
@@ -268,7 +318,7 @@ def generate_shenlun_material(comments: List[Dict[str, Any]],
     if not raw:
         return empty_result
     try:
-        data = json.loads(raw)
+        data = _extract_json(raw)
         return {
             "topic": data.get("topic", "").strip(),
             "opening": data.get("opening", "").strip()[:600],
@@ -311,7 +361,7 @@ def daily_summary(comments: List[Dict[str, Any]],
     if not raw:
         return empty_result
     try:
-        data = json.loads(raw)
+        data = _extract_json(raw)
         return {
             "headline": data.get("headline", "").strip()[:80],
             "summary": data.get("summary", "").strip()[:300],
@@ -327,6 +377,9 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
                         cfg: Optional[AIConfig] = None) -> Dict[str, Any]:
     """一键跑完全部 4 个 AI 功能。任何一个失败都不影响其他。
 
+    带总超时保护（默认 480 秒 = 8 分钟），超预算后剩余功能自动跳过，
+    避免整个 workflow 被某个慢调用拖死。
+
     返回：
     {
         "enabled": bool,
@@ -334,8 +387,11 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
         "comments_with_ai": [...],         # 评论 + ai_golden + ai_comment
         "shenlun_material": {...},
         "daily_summary": {...},
+        "timed_out": bool,                 # 是否触发了超时保护
     }
     """
+    import time as _t
+
     cfg = cfg or AIConfig()
     ai_ok = is_ai_available(cfg)
     result: Dict[str, Any] = {
@@ -348,6 +404,7 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
             "conclusion": "", "key_words": [],
         },
         "daily_summary": {"headline": "", "summary": ""},
+        "timed_out": False,
     }
 
     if not ai_ok:
@@ -358,20 +415,68 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
 
     log.info("🤖 AI 增强启用，model=%s", cfg.model)
 
-    # 功能 1 & 2 并行调用不现实（litellm 同步），串行但每个独立
-    result["news_with_points"] = extract_exam_points_from_news(news_list, cfg)
-    result["comments_with_ai"] = ai_select_golden(comments, cfg)
-    result["shenlun_material"] = generate_shenlun_material(comments, news_list, cfg)
-    result["daily_summary"] = daily_summary(comments, news_list, cfg)
+    # 总时间预算
+    TOTAL_BUDGET = 480  # 8 分钟
+    start = _t.monotonic()
+    ok = True
 
-    # 统计
+    def _budget_left() -> float:
+        return TOTAL_BUDGET - (_t.monotonic() - start)
+
+    def _check_budget(stage_name: str) -> bool:
+        left = _budget_left()
+        if left < 60:  # 至少留 60 秒给下一个
+            log.warning("⏱️ AI 总时间还剩 %.0fs（已用 %.0fs），跳过剩余功能",
+                        left, _t.monotonic() - start)
+            result["timed_out"] = True
+            return False
+        return True
+
+    # 功能 1
+    if _check_budget("考点提炼"):
+        try:
+            result["news_with_points"] = extract_exam_points_from_news(news_list, cfg)
+        except Exception as e:
+            log.warning("考点提炼阶段异常：%s", e)
+            result["news_with_points"] = news_list
+    else:
+        result["news_with_points"] = news_list
+        ok = False
+
+    # 功能 2
+    if ok and _check_budget("AI 金句"):
+        try:
+            result["comments_with_ai"] = ai_select_golden(comments, cfg)
+        except Exception as e:
+            log.warning("AI 金句阶段异常：%s", e)
+            result["comments_with_ai"] = comments
+    elif not ok:
+        result["comments_with_ai"] = comments
+
+    # 功能 3
+    if ok and _check_budget("申论素材"):
+        try:
+            result["shenlun_material"] = generate_shenlun_material(comments, news_list, cfg)
+        except Exception as e:
+            log.warning("申论素材阶段异常：%s", e)
+
+    # 功能 4
+    if ok and _check_budget("每日总评"):
+        try:
+            result["daily_summary"] = daily_summary(comments, news_list, cfg)
+        except Exception as e:
+            log.warning("每日总评阶段异常：%s", e)
+
+    elapsed = _t.monotonic() - start
     sp = result["shenlun_material"]
     ds = result["daily_summary"]
     n_points = sum(1 for n in result["news_with_points"] if n.get("exam_points"))
     n_golden = sum(1 for c in result["comments_with_ai"] if c.get("ai_golden"))
-    log.info("✅ AI 完成：考点=%d条新闻, 金句=%d篇评论, 申论素材=%s, 总评=%s",
+    log.info("✅ AI 完成（耗时 %.0fs，预算 %ds）：考点=%d条, 金句=%d篇, 申论素材=%s, 总评=%s%s",
+             elapsed, TOTAL_BUDGET,
              n_points, n_golden,
              "OK" if sp.get("topic") else "FAIL",
-             "OK" if ds.get("headline") else "FAIL")
+             "OK" if ds.get("headline") else "FAIL",
+             " [⏱️ 超时]" if result.get("timed_out") else "")
 
     return result

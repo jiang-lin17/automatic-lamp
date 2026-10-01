@@ -103,6 +103,9 @@ def build_markdown_message(
     comments_len: int,
     news_len: int,
     golden_len: int,
+    ai_summary_headline: str = "",
+    ai_summary_text: str = "",
+    ai_enabled: bool = False,
 ) -> str:
     """构造企业微信 Markdown 消息体。"""
     lines = [
@@ -117,9 +120,32 @@ def build_markdown_message(
         f"- **人民日报评论**: {comments_len}篇（全文+金句）",
         f"- **时政热点**: {news_len}条（新华网+人民网）",
         f"- **金句积累**: {golden_len}句",
+    ]
+    if ai_enabled:
+        lines += [
+            f"- **🤖 AI 增强**: 已启用（考点提炼+AI金句+申论素材+每日总评）",
+        ]
+    lines += [
         "",
         "---",
         "",
+    ]
+    # AI 总评（短的话放 markdown 里，太长就省略）
+    if ai_summary_headline and ai_summary_text:
+        summary = ai_summary_text.strip()
+        if len(summary) > 180:
+            summary = summary[:177] + "..."
+        lines += [
+            "### 🤖 AI 每日总评",
+            "",
+            f"**{ai_summary_headline}**",
+            "",
+            summary,
+            "",
+            "---",
+            "",
+        ]
+    lines += [
         "### 💡 学习建议",
         "",
         "1. 精读2篇评论，分析论证结构",

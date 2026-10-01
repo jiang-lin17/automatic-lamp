@@ -98,6 +98,7 @@ def run() -> Tuple[int, int]:
     log.info("[5/5] 推送到企业微信...")
     total_golden = sum(len(c.get("ai_golden", []) or c.get("golden", []))
                        for c in comments_with_ai)
+    ds = ai_result.get("daily_summary", {})
     markdown = build_markdown_message(
         exam_name=exam_name,
         date_cn=date_cn,
@@ -106,6 +107,9 @@ def run() -> Tuple[int, int]:
         comments_len=len(comments_with_ai),
         news_len=len(news_list),
         golden_len=total_golden,
+        ai_summary_headline=ds.get("headline", ""),
+        ai_summary_text=ds.get("summary", ""),
+        ai_enabled=ai_result.get("enabled", False),
     )
     webhook = get_wecom_webhook()
     if webhook:
