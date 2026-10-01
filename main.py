@@ -569,7 +569,7 @@ def main():
 
     print('\n' + '=' * 50)
     print('All done!')
-    print('=' * 50)
+    打印('=' * 50)
 
 if __name__ == '__main__':
-    主函数()
+    main()
