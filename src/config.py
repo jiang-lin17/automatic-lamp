@@ -64,12 +64,13 @@ class HttpConfig:
 SCRAPE_SOURCES = {
     # —— 人民日报评论 ——
     # 注：people.com.cn 的 HTTPS 证书有 hostname mismatch 问题，必须走 HTTP
+    # 注：人民网已全面升级为 UTF-8（不再是历史上的 GBK），article_encoding 留空交给自动检测
     "people_shiping": {
         "name": "人民时评",
         "source": "人民网",
         "list_url": "http://opinion.people.com.cn/GB/8213/49160/49219/index.html",
         "href_contains": ["/n1/", "c461529"],
-        "article_encoding": "gbk",
+        "article_encoding": "utf-8",
         "max_items": 3,
     },
     "people_ruiping": {
@@ -77,7 +78,7 @@ SCRAPE_SOURCES = {
         "source": "人民网",
         "list_url": "http://opinion.people.com.cn/GB/436867/index.html",
         "href_contains": ["/n1/", "c436867"],
-        "article_encoding": "gbk",
+        "article_encoding": "utf-8",
         "max_items": 2,
     },
     # —— 时政新闻 ——
@@ -92,12 +93,13 @@ SCRAPE_SOURCES = {
         "min_title_len": 15,
     },
     # 注：people.com.cn 的 HTTPS 证书有 hostname mismatch 问题，必须走 HTTP
+    # 注：人民网已全面升级为 UTF-8
     "people_politics": {
         "name": "人民网时政",
         "source": "人民网",
         "list_url": "http://politics.people.com.cn/GB/1024/index.html",
         "href_contains": ["/n1/"],
-        "article_encoding": "gbk",
+        "article_encoding": "utf-8",
         "max_items": 5,
         "min_title_len": 12,
     },
