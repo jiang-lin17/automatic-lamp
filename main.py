@@ -2,17 +2,20 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import re
 import requests
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 
 WECOM_WEBHOOK = os.environ.get('WECOM_WEBHOOK', '')
-EXAM_NAME = '2027年江西省考'
+EXAM_NAME = '2027\x5e74\x6c5f\x897f\x7701\x8003'
 EXAM_DATE = datetime(2027, 3, 25)
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive'
 }
 
 def get_target_date():
@@ -21,9 +24,9 @@ def get_target_date():
     return yesterday
 
 def format_date(date):
-    weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
+    weekdays = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09', '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5']
     date_str = date.strftime('%Y-%m-%d')
-    date_cn = date.strftime('%Y年%m月%d日')
+    date_cn = date.strftime('%Y\u5e74%m\u6708%d\u65e5')
     weekday = weekdays[date.weekday()]
     days_left = (EXAM_DATE - date).days
     return date_str, date_cn, weekday, days_left
@@ -41,15 +44,15 @@ def fetch_comments():
             text = link.get_text(strip=True)
             if '/n1/' in href and 'c461529' in href and text and len(text) > 5 and count < 3:
                 full_url = 'http://opinion.people.com.cn' + href if href.startswith('/') else href
-                article = fetch_article_full(full_url)
+                article = fetch_article_full(full_url, 'gbk')
                 comments.append({
                     'title': text,
-                    'column': '人民时评',
+                    'column': '\u4eba\u6c11\u65f6\u8bc4',
                     'url': full_url,
                     'summary': article['summary'],
                     'content': article['content'],
                     'author': article['author'],
-                    'golden_sentences': article['golden_sentences']
+                    'golden': article['golden']
                 })
                 count += 1
         try:
@@ -62,15 +65,15 @@ def fetch_comments():
                 text = link.get_text(strip=True)
                 if '/n1/' in href and 'c436867' in href and text and len(text) > 5:
                     full_url = 'http://opinion.people.com.cn' + href if href.startswith('/') else href
-                    article = fetch_article_full(full_url)
+                    article = fetch_article_full(full_url, 'gbk')
                     comments.append({
                         'title': text,
-                        'column': '人民锐评',
+                        'column': '\u4eba\u6c11\u9510\u8bc4',
                         'url': full_url,
                         'summary': article['summary'],
                         'content': article['content'],
                         'author': article['author'],
-                        'golden_sentences': article['golden_sentences']
+                        'golden': article['golden']
                     })
                     break
         except Exception as e:
@@ -79,20 +82,22 @@ def fetch_comments():
         print('fail shiping: ' + str(e))
     return comments[:4]
 
-def fetch_article_full(url):
-    result = {'summary': '', 'content': '', 'author': '', 'golden_sentences': []}
+def fetch_article_full(url, encoding='utf-8'):
+    result = {'summary': '', 'content': [], 'author': '', 'golden': []}
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
-        resp.encoding = resp.apparent_encoding or 'gbk'
+        resp.encoding = resp.apparent_encoding or encoding
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # 找作者
-        author_div = soup.find('div', class_='author') or soup.find('div', class_='rm_txt_con_author')
+        author_div = soup.find('div', class_='author') or soup.find('div', class_='rm_txt_con_author') or soup.find('div', class_='info')
         if author_div:
-            result['author'] = author_div.get_text(strip=True)
+            result['author'] = author_div.get_text(strip=True)[:50]
         
-        # 找正文
-        content_div = soup.find('div', class_='rm_txt_con') or soup.find('div', id='rwb_zw') or soup.find('div', class_='article-content')
+        content_div = (soup.find('div', class_='rm_txt_con') or 
+                       soup.find('div', id='rwb_zw') or 
+                       soup.find('div', class_='article-content') or
+                       soup.find('div', id='detailContent') or
+                       soup.find('div', class_='content'))
         if content_div:
             paragraphs = []
             for p in content_div.find_all('p'):
@@ -102,72 +107,156 @@ def fetch_article_full(url):
             
             result['content'] = paragraphs
             if len(paragraphs) > 2:
-                result['summary'] = paragraphs[0][:150] + '...' if len(paragraphs[0]) > 150 else paragraphs[0]
+                first = paragraphs[0]
+                result['summary'] = first[:150] + '...' if len(first) > 150 else first
             
-            # 提取金句（含引号或对仗工整的句子）
             for p in paragraphs:
-                if ('"' in p or '"' in p) and len(p) < 100:
-                    result['golden_sentences'].append(p.strip())
-                elif '不是...而是' in p or '既要...也要' in p or '从...到...' in p:
-                    result['golden_sentences'].append(p.strip())
-                if len(result['golden_sentences']) >= 5:
+                if len(p) < 100 and ('\u201c' in p or '\u201d' in p or '"' in p):
+                    result['golden'].append(p.strip())
+                if len(result['golden']) >= 5:
                     break
         
         if not result['summary']:
-            result['summary'] = '点击查看原文'
+            result['summary'] = '\u70b9\u51fb\u67e5\u770b\u539f\u6587'
             
     except Exception as e:
-        result['summary'] = '点击查看原文'
+        result['summary'] = '\u70b9\u51fb\u67e5\u770b\u539f\u6587'
         print('fetch article error: ' + str(e))
     
     return result
 
 def fetch_news():
     news_list = []
+    
+    # Source 1: 新华网时政
+    print('  [source 1] xinhuanet politics...')
     try:
-        url = 'http://politics.people.com.cn/'
+        url = 'http://www.xinhuanet.com/politics/'
         resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.encoding = resp.apparent_encoding or 'gbk'
+        resp.encoding = resp.apparent_encoding or 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
-        for link in soup.find_all('a', href=True)[:50]:
+        links = soup.find_all('a', href=True)
+        count = 0
+        for link in links:
             title = link.get_text(strip=True)
             href = link.get('href', '')
-            if title and len(title) > 12 and '/n1/' in href:
-                full_url = 'http://politics.people.com.cn' + href if href.startswith('/') else href
-                summary = fetch_news_summary(full_url)
+            if (title and len(title) > 15 and 
+                ('news.cn' in href or 'xinhuanet.com' in href) and
+                '/politics/' in href and
+                ('.htm' in href or '.html' in href) and
+                'index' not in href):
+                full_url = href if href.startswith('http') else 'http://www.xinhuanet.com' + href
+                summary = fetch_news_summary(full_url, 'utf-8')
                 news_list.append({
                     'title': title,
                     'url': full_url,
-                    'source': '人民网',
-                    'category': '时政要闻',
+                    'source': '\u65b0\u534e\u7f51',
+                    'category': '\u65f6\u653f\u8981\u95fb',
                     'summary': summary
                 })
+                count += 1
+                if count >= 8:
+                    break
+        print('    got ' + str(count) + ' items')
     except Exception as e:
-        print('fail news: ' + str(e))
+        print('    xinhuanet fail: ' + str(e))
     
+    # Source 2: 人民网时政新闻（备用，可能403）
+    print('  [source 2] people politics...')
     try:
-        url2 = 'https://www.gov.cn/yaowen.htm'
-        resp2 = requests.get(url2, headers=HEADERS, timeout=15)
-        resp2.encoding = 'utf-8'
-        soup2 = BeautifulSoup(resp2.text, 'html.parser')
-        items = soup2.find_all('li')
-        for item in items[:10]:
-            link = item.find('a')
-            if link:
+        url = 'http://politics.people.com.cn/GB/1024/index.html'
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code == 200:
+            resp.encoding = resp.apparent_encoding or 'gbk'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            count = 0
+            for link in soup.find_all('a', href=True):
                 title = link.get_text(strip=True)
                 href = link.get('href', '')
-                if title and len(title) > 10:
-                    full_url = href if href.startswith('http') else 'https://www.gov.cn/' + href.lstrip('/')
+                if title and len(title) > 12 and '/n1/' in href:
+                    full_url = 'http://politics.people.com.cn' + href if href.startswith('/') else href
+                    summary = fetch_news_summary(full_url, 'gbk')
                     news_list.append({
                         'title': title,
                         'url': full_url,
-                        'source': '中国政府网',
-                        'category': '国内要闻',
-                        'summary': ''
+                        'source': '\u4eba\u6c11\u7f51',
+                        'category': '\u65f6\u653f\u8981\u95fb',
+                        'summary': summary
                     })
+                    count += 1
+                    if count >= 5:
+                        break
+            print('    got ' + str(count) + ' items')
+        else:
+            print('    status ' + str(resp.status_code) + ', skip')
     except Exception as e:
-        print('fail gov: ' + str(e))
+        print('    people fail: ' + str(e))
     
+    # Source 3: 中国政府网
+    print('  [source 3] gov.cn...')
+    try:
+        url = 'https://www.gov.cn/yaowen/'
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code == 200:
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            items = soup.find_all('li')
+            count = 0
+            for item in items[:30]:
+                link = item.find('a')
+                if link:
+                    title = link.get_text(strip=True)
+                    href = link.get('href', '')
+                    if title and len(title) > 10 and '.htm' in href:
+                        full_url = href if href.startswith('http') else 'https://www.gov.cn' + href
+                        news_list.append({
+                            'title': title,
+                            'url': full_url,
+                            'source': '\u4e2d\u56fd\u653f\u5e9c\u7f51',
+                            'category': '\u56fd\u5185\u8981\u95fb',
+                            'summary': ''
+                        })
+                        count += 1
+                        if count >= 5:
+                            break
+            print('    got ' + str(count) + ' items')
+        else:
+            print('    status ' + str(resp.status_code) + ', skip')
+    except Exception as e:
+        print('    gov fail: ' + str(e))
+    
+    # Source 4: 新华网要闻
+    print('  [source 4] xinhuanet head...')
+    try:
+        url = 'http://www.news.cn/'
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp.encoding = resp.apparent_encoding or 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        links = soup.find_all('a', href=True)
+        count = 0
+        for link in links:
+            title = link.get_text(strip=True)
+            href = link.get('href', '')
+            if (title and len(title) > 18 and 
+                'news.cn' in href and
+                ('/202609' in href or '/202610' in href) and
+                ('.htm' in href or '.html' in href)):
+                full_url = href if href.startswith('http') else href
+                news_list.append({
+                    'title': title,
+                    'url': full_url,
+                    'source': '\u65b0\u534e\u7f51',
+                    'category': '\u56fd\u5185\u8981\u95fb',
+                    'summary': ''
+                })
+                count += 1
+                if count >= 5:
+                    break
+        print('    got ' + str(count) + ' items')
+    except Exception as e:
+        print('    news.cn fail: ' + str(e))
+    
+    # Remove duplicates
     seen = set()
     unique = []
     for n in news_list:
@@ -176,12 +265,15 @@ def fetch_news():
             unique.append(n)
     return unique[:15]
 
-def fetch_news_summary(url):
+def fetch_news_summary(url, encoding='utf-8'):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=10)
-        resp.encoding = resp.apparent_encoding or 'gbk'
+        resp.encoding = resp.apparent_encoding or encoding
         soup = BeautifulSoup(resp.text, 'html.parser')
-        content_div = soup.find('div', class_='rm_txt_con') or soup.find('div', id='rwb_zw')
+        content_div = (soup.find('div', class_='rm_txt_con') or 
+                       soup.find('div', id='rwb_zw') or
+                       soup.find('div', id='detailContent') or
+                       soup.find('div', class_='content'))
         if content_div:
             ps = content_div.find_all('p')
             for p in ps:
@@ -200,7 +292,7 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER
 
     font_ok = False
     for fp in ['/usr/share/fonts/truetype/wqy/wqy-microhei.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', 'C:/Windows/Fonts/msyh.ttc']:
@@ -220,37 +312,36 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     QUOTE_BG = HexColor('#f3f4f6')
 
     styles = getSampleStyleSheet()
-    s_cover_title = ParagraphStyle('ct', parent=styles['Title'], fontName='CN', fontSize=26, leading=36, alignment=TA_CENTER, textColor=PRIMARY)
-    s_cover_sub = ParagraphStyle('cs', parent=styles['Normal'], fontName='CN', fontSize=14, leading=22, alignment=TA_CENTER, textColor=TEXT_GRAY)
-    s_cover_date = ParagraphStyle('cd', parent=styles['Normal'], fontName='CN', fontSize=20, leading=30, alignment=TA_CENTER, textColor=TEXT_DARK)
+    s_ct = ParagraphStyle('ct', parent=styles['Title'], fontName='CN', fontSize=26, leading=36, alignment=TA_CENTER, textColor=PRIMARY)
+    s_cs = ParagraphStyle('cs', parent=styles['Normal'], fontName='CN', fontSize=14, leading=22, alignment=TA_CENTER, textColor=TEXT_GRAY)
+    s_cd = ParagraphStyle('cd', parent=styles['Normal'], fontName='CN', fontSize=20, leading=30, alignment=TA_CENTER, textColor=TEXT_DARK)
     s_h1 = ParagraphStyle('h1', parent=styles['Heading1'], fontName='CN', fontSize=18, leading=28, textColor=PRIMARY, spaceAfter=6)
     s_h2 = ParagraphStyle('h2', parent=styles['Heading2'], fontName='CN', fontSize=14, leading=22, textColor=TEXT_DARK, spaceAfter=4)
     s_h3 = ParagraphStyle('h3', parent=styles['Heading3'], fontName='CN', fontSize=12, leading=18, textColor=PRIMARY, spaceAfter=3)
-    s_body = ParagraphStyle('bd', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, firstLineIndent=21)
-    s_body_no_indent = ParagraphStyle('bdn', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK)
-    s_bullet = ParagraphStyle('bl', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, leftIndent=15)
-    s_quote = ParagraphStyle('qt', parent=styles['Normal'], fontName='CN', fontSize=10, leading=17, textColor=ACCENT, leftIndent=20, rightIndent=10, backColor=QUOTE_BG, borderPadding=5)
+    s_bd = ParagraphStyle('bd', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, firstLineIndent=21)
+    s_bdn = ParagraphStyle('bdn', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK)
+    s_bl = ParagraphStyle('bl', parent=styles['Normal'], fontName='CN', fontSize=10.5, leading=18, textColor=TEXT_DARK, leftIndent=15)
+    s_qt = ParagraphStyle('qt', parent=styles['Normal'], fontName='CN', fontSize=10, leading=17, textColor=ACCENT, leftIndent=20, rightIndent=10, backColor=QUOTE_BG, borderPadding=5)
     s_th = ParagraphStyle('th', parent=styles['Normal'], fontName='CN', fontSize=10, leading=16, textColor=white, alignment=TA_CENTER)
     s_td = ParagraphStyle('td', parent=styles['Normal'], fontName='CN', fontSize=9.5, leading=15, textColor=TEXT_DARK, alignment=TA_CENTER)
-    s_meta = ParagraphStyle('mt', parent=styles['Normal'], fontName='CN', fontSize=9, leading=14, textColor=TEXT_GRAY)
+    s_mt = ParagraphStyle('mt', parent=styles['Normal'], fontName='CN', fontSize=9, leading=14, textColor=TEXT_GRAY)
 
     doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm, title='JiangxiGK Daily', author='GK Helper')
     story = []
 
-    # ========== 封面 ==========
     story.append(Spacer(1, 35*mm))
-    story.append(Paragraph('📚 江西省考每日备考资料', s_cover_title))
+    story.append(Paragraph('\U0001f4da ' + EXAM_NAME + '\u6bcf\u65e5\u5907\u8003\u8d44\u6599', s_ct))
     story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(EXAM_NAME, s_cover_sub))
+    story.append(Paragraph(EXAM_NAME, s_cs))
     story.append(Spacer(1, 10*mm))
-    story.append(Paragraph(date_cn + ' ' + weekday, s_cover_date))
+    story.append(Paragraph(date_cn + ' ' + weekday, s_cd))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph('⏰ 距笔试还有 ' + str(days_left) + ' 天', s_cover_sub))
+    story.append(Paragraph('\u23f0 \u8ddd\u7b14\u8bd5\u8fd8\u6709 ' + str(days_left) + ' \u5929', s_cs))
     story.append(Spacer(1, 12*mm))
 
     ov = [
-        [Paragraph('人民日报评论', s_th), Paragraph('时政新闻', s_th), Paragraph('金句摘录', s_th)],
-        [Paragraph(str(len(comments)) + '篇', s_td), Paragraph(str(len(news_list)) + '条', s_td), Paragraph(str(len(comments)*3) + '句', s_td)],
+        [Paragraph('\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba', s_th), Paragraph('\u65f6\u653f\u65b0\u95fb', s_th), Paragraph('\u91d1\u53e5\u6458\u5f55', s_th)],
+        [Paragraph(str(len(comments)) + '\u7bc7', s_td), Paragraph(str(len(news_list)) + '\u6761', s_td), Paragraph(str(len(comments)*3) + '\u53e5', s_td)],
     ]
     t = Table(ov, colWidths=[50*mm, 50*mm, 50*mm])
     t.setStyle(TableStyle([
@@ -266,46 +357,43 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     ]))
     story.append(t)
     story.append(Spacer(1, 20*mm))
-    story.append(Paragraph('每天进步一点点，一次上岸江西 💪', s_cover_sub))
+    story.append(Paragraph('\u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f \U0001f4aa', s_cs))
     story.append(PageBreak())
 
-    # ========== 人民日报评论（全文） ==========
-    story.append(Paragraph('📰 人民日报评论', s_h1))
+    story.append(Paragraph('\U0001f4f0 \u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba', s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('精选当日人民时评、人民锐评，全文呈现', s_meta))
+    story.append(Paragraph('\u7cbe\u9009\u5f53\u65e5\u4eba\u6c11\u65f6\u8bc4\u3001\u4eba\u6c11\u9510\u8bc4\uff0c\u5168\u6587\u5448\u73b0', s_mt))
     story.append(Spacer(1, 4*mm))
 
     for i, c in enumerate(comments, 1):
         story.append(Paragraph(str(i) + '. ' + c['title'], s_h2))
-        story.append(Paragraph('栏目：' + c['column'] + ((' | 作者：' + c['author']) if c['author'] else '') + ' | <a href="' + c['url'] + '" color="#1a73e8">查看原文</a>', s_meta))
+        author_info = (' | \u4f5c\u8005\uff1a' + c['author']) if c['author'] else ''
+        story.append(Paragraph('\u680f\u76ee\uff1a' + c['column'] + author_info + ' | <a href="' + c['url'] + '" color="#1a73e8">\u67e5\u770b\u539f\u6587</a>', s_mt))
         story.append(Spacer(1, 2*mm))
         
-        # 全文内容（限制段落数，避免PDF太长）
         if c['content']:
             max_paras = min(len(c['content']), 20)
-            for j, para in enumerate(c['content'][:max_paras]):
-                story.append(Paragraph(para, s_body))
+            for para in c['content'][:max_paras]:
+                story.append(Paragraph(para, s_bd))
             if len(c['content']) > max_paras:
-                story.append(Paragraph('...（剩余内容请查看原文）', s_meta))
+                story.append(Paragraph('...\uff08\u5269\u4f59\u5185\u5bb9\u8bf7\u67e5\u770b\u539f\u6587\uff09', s_mt))
         else:
-            story.append(Paragraph(c['summary'], s_body))
+            story.append(Paragraph(c['summary'], s_bd))
         
-        # 金句摘录
-        if c['golden_sentences']:
+        if c['golden']:
             story.append(Spacer(1, 3*mm))
-            story.append(Paragraph('💡 金句摘录', s_h3))
-            for gs in c['golden_sentences'][:3]:
-                story.append(Paragraph('"' + gs + '"', s_quote))
+            story.append(Paragraph('\U0001f4a1 \u91d1\u53e5\u6458\u5f55', s_h3))
+            for gs in c['golden'][:3]:
+                story.append(Paragraph('\u201c' + gs + '\u201d', s_qt))
                 story.append(Spacer(1, 1*mm))
         
         story.append(Spacer(1, 5*mm))
     
     story.append(PageBreak())
 
-    # ========== 时政热点 ==========
-    story.append(Paragraph('🔔 时政热点', s_h1))
+    story.append(Paragraph('\U0001f514 \u65f6\u653f\u70ed\u70b9', s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('当日重要时政新闻汇总，标注来源', s_meta))
+    story.append(Paragraph('\u5f53\u65e5\u91cd\u8981\u65f6\u653f\u65b0\u95fb\u6c47\u603b\uff0c\u6765\u6e90\uff1a\u65b0\u534e\u7f51\u3001\u4eba\u6c11\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51', s_mt))
     story.append(Spacer(1, 4*mm))
 
     cats = {}
@@ -316,57 +404,55 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
         cats[cat].append(n)
     
     for cat, items in cats.items():
-        story.append(Paragraph('▸ ' + cat, s_h2))
+        story.append(Paragraph('\u25b8 ' + cat, s_h2))
         story.append(Spacer(1, 2*mm))
         for j, n in enumerate(items, 1):
-            story.append(Paragraph(str(j) + '. ' + n['title'], s_body_no_indent))
-            story.append(Paragraph('<font color="#5f6368" size=9>来源：' + n['source'] + ' | <a href="' + n['url'] + '" color="#1a73e8">查看原文</a></font>', s_meta))
+            story.append(Paragraph(str(j) + '. ' + n['title'], s_bdn))
+            story.append(Paragraph('<font color="#5f6368" size=9>\u6765\u6e90\uff1a' + n['source'] + ' | <a href="' + n['url'] + '" color="#1a73e8">\u67e5\u770b\u539f\u6587</a></font>', s_mt))
             if n['summary']:
-                story.append(Paragraph('<font color="#5f6368" size=9>摘要：' + n['summary'] + '</font>', s_meta))
+                story.append(Paragraph('<font color="#5f6368" size=9>\u6458\u8981\uff1a' + n['summary'] + '</font>', s_mt))
             story.append(Spacer(1, 2*mm))
         story.append(Spacer(1, 3*mm))
     
     story.append(PageBreak())
 
-    # ========== 申论金句积累 ==========
-    story.append(Paragraph('💬 申论金句积累', s_h1))
+    story.append(Paragraph('\U0001f4ac \u7533\u8bba\u91d1\u53e5\u79ef\u7d2f', s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('从当日评论文章中摘录的精彩语句', s_meta))
+    story.append(Paragraph('\u4ece\u5f53\u65e5\u8bc4\u8bba\u6587\u7ae0\u4e2d\u6458\u5f55\u7684\u7cbe\u5f69\u8bed\u53e5', s_mt))
     story.append(Spacer(1, 4*mm))
 
     all_golden = []
     for c in comments:
-        all_golden.extend(c['golden_sentences'])
+        all_golden.extend(c['golden'])
     
     if all_golden:
         for idx, gs in enumerate(all_golden[:15], 1):
-            story.append(Paragraph(str(idx) + '. "' + gs + '"', s_quote))
+            story.append(Paragraph(str(idx) + '. \u201c' + gs + '\u201d', s_qt))
             story.append(Spacer(1, 2*mm))
     else:
-        story.append(Paragraph('今日金句待积累（建议阅读评论文章自行摘抄）', s_body))
+        story.append(Paragraph('\u4eca\u65e5\u91d1\u53e5\u5f85\u79ef\u7d2f\uff08\u5efa\u8bae\u9605\u8bfb\u8bc4\u8bba\u6587\u7ae0\u81ea\u884c\u6458\u6284\uff09', s_bd))
     
     story.append(Spacer(1, 8*mm))
 
-    # ========== 学习小贴士 ==========
-    story.append(Paragraph('💡 学习小贴士', s_h1))
+    story.append(Paragraph('\U0001f4a1 \u5b66\u4e60\u5c0f\u8d34\u58eb', s_h1))
     story.append(Spacer(1, 3*mm))
     tips = [
-        '1. 精读2篇人民日报评论，注意文章结构和论证方法',
-        '2. 摘抄3-5个金句，尝试用在申论写作中',
-        '3. 时政新闻中注意数字类、会议类、政策类考点',
-        '4. 结合热点思考申论作文的立意和分论点',
-        '5. 每天坚持阅读，培养官方语感和政策思维',
+        '1. \u7cbe\u8bfb2\u7bc7\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba\uff0c\u6ce8\u610f\u6587\u7ae0\u7ed3\u6784\u548c\u8bba\u8bc1\u65b9\u6cd5',
+        '2. \u6458\u62843-5\u4e2a\u91d1\u53e5\uff0c\u5c1d\u8bd5\u7528\u5728\u7533\u8bba\u5199\u4f5c\u4e2d',
+        '3. \u65f6\u653f\u65b0\u95fb\u4e2d\u6ce8\u610f\u6570\u5b57\u7c7b\u3001\u4f1a\u8bae\u7c7b\u3001\u653f\u7b56\u7c7b\u8003\u70b9',
+        '4. \u7ed3\u5408\u70ed\u70b9\u601d\u8003\u7533\u8bba\u4f5c\u6587\u7684\u7acb\u610f\u548c\u5206\u8bba\u70b9',
+        '5. \u6bcf\u5929\u575a\u6301\u9605\u8bfb\uff0c\u57f9\u517b\u5b98\u65b9\u8bed\u611f\u548c\u653f\u7b56\u601d\u7ef4',
     ]
     for tip in tips:
-        story.append(Paragraph(tip, s_bullet))
+        story.append(Paragraph(tip, s_bl))
         story.append(Spacer(1, 2*mm))
 
     story.append(Spacer(1, 10*mm))
-    story.append(Paragraph('---', s_body))
+    story.append(Paragraph('---', s_bd))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph('<font color="#5f6368" size=8>本资料由 GitHub Actions 自动生成 | 数据来源：人民网、中国政府网</font>', s_meta))
+    story.append(Paragraph('<font color="#5f6368" size=8>\u672c\u8d44\u6599\u7531 GitHub Actions \u81ea\u52a8\u751f\u6210 | \u6570\u636e\u6765\u6e90\uff1a\u4eba\u6c11\u7f51\u3001\u65b0\u534e\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51</font>', s_mt))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('<font color="#5f6368" size=8>生成时间：' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '</font>', s_meta))
+    story.append(Paragraph('<font color="#5f6368" size=8>\u751f\u6210\u65f6\u95f4\uff1a' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '</font>', s_mt))
 
     doc.build(story)
     print('PDF OK: ' + output_path)
@@ -374,7 +460,7 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
 
 def send_text(content):
     if not WECOM_WEBHOOK:
-        print('no webhook, skip')
+        print('no webhook, skip text')
         return False
     try:
         data = {'msgtype': 'markdown', 'markdown': {'content': content}}
@@ -392,7 +478,7 @@ def send_text(content):
 
 def send_file(file_path):
     if not WECOM_WEBHOOK:
-        print('no webhook, skip')
+        print('no webhook, skip file')
         return False
     try:
         key = WECOM_WEBHOOK.split('key=')[-1] if 'key=' in WECOM_WEBHOOK else ''
@@ -423,63 +509,67 @@ def send_file(file_path):
         return False
 
 def main():
-    print('=' * 40)
-    print('JiangxiGK Daily Report (Enhanced)')
-    print('=' * 40)
+    print('=' * 50)
+    print('JiangxiGK Daily Report v2.0')
+    print('=' * 50)
 
     target_date = get_target_date()
     date_str, date_cn, weekday, days_left = format_date(target_date)
     print('Date: ' + date_cn + ' ' + weekday)
     print('Days left: ' + str(days_left))
+    print('Webhook: ' + ('YES' if WECOM_WEBHOOK else 'NO'))
 
     os.makedirs('./output', exist_ok=True)
-    pdf_path = './output/每日备考资料_' + date_str + '.pdf'
+    pdf_path = './output/meiriziliao_' + date_str + '.pdf'
 
     print('\n[1/4] Fetch comments (full text)...')
     comments = fetch_comments()
-    print('  Got ' + str(len(comments)) + ' comments')
+    print('  Total: ' + str(len(comments)) + ' comments')
     for c in comments:
         paras = len(c['content']) if c['content'] else 0
-        print('    - ' + c['title'][:30] + ' (' + str(paras) + ' paragraphs)')
+        print('    - ' + c['title'][:35] + ' (' + str(paras) + 'p)')
 
-    print('\n[2/4] Fetch news...')
+    print('\n[2/4] Fetch news (4 sources)...')
     news_list = fetch_news()
-    print('  Got ' + str(len(news_list)) + ' news')
-    for n in news_list[:5]:
-        print('    - ' + n['title'][:30])
+    print('  Total: ' + str(len(news_list)) + ' news items')
+    for n in news_list[:8]:
+        print('    - [' + n['source'] + '] ' + n['title'][:35])
 
     print('\n[3/4] Generate PDF...')
     ok = generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, pdf_path)
     if not ok:
-        print('PDF failed!')
+        打印('PDF 失败！')
         sys.exit(1)
     fsize = os.path.getsize(pdf_path)
     print('  Size: ' + str(round(fsize/1024, 1)) + ' KB')
 
-    print('\n[4/4] Push to WeCom...')
-    total_golden = sum(len(c['golden_sentences']) for c in comments)
-    md = '## 📚 江西省考每日备考资料 - ' + date_cn + ' ' + weekday + '\n\n'
-    md += '⏰ 距' + EXAM_NAME + '笔试还有 **' + str(days_left) + '** 天\n\n'
+    print('\n[4/4] 推送到企业微信...')
+    total_golden = sum(len(c['golden']) for c in comments)
+    md = '## \U0001f4da ' + EXAM_NAME + '\u6bcf\u65e5\u5907\u8003\u8d44\u6599 - ' + date_cn + ' ' + weekday + '\n\n'
+    md += '\u23f0 \u8ddd' + EXAM_NAME + '\u7b14\u8bd5\u8fd8\u6709 **' + str(days_left) + '** \u5929\n\n'
     md += '---\n\n'
-    md += '### 📰 今日内容\n\n'
-    md += '- **人民日报评论**：' + str(len(comments)) + '篇（全文呈现+金句摘录）\n'
-    md += '- **时政热点**：' + str(len(news_list)) + '条\n'
-    md += '- **金句积累**：' + str(total_golden) + '句\n\n'
+    md += '### \U0001f4f0 \u4eca\u65e5\u5185\u5bb9\n\n'
+    md += '- **\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba**\uff1a' + str(len(comments)) + '\u7bc7\uff08\u5168\u6587+\u91d1\u53e5\uff09\n'
+    md += '- **\u65f6\u653f\u70ed\u70b点**\uff1a' + str(len(news_list)) + '\u6761\uff08\u65b0\u534e\u7f51+\u4e2d\u56fd\u653f\u5e9c\u7f51\uff09\n'
+    md += '- **\u91d1\u53e5\u79积\u7d2f**\uff1a' + str(total_golden) + '\u53e5\n\n'
     md += '---\n\n'
-    md += '### 💡 学习建议\n\n'
-    md += '1. 精读2篇评论，分析论证结构\n'
-    md += '2. 摘抄金句，用于申论写作\n'
-    md += '3. 时政标注考点（数字/会议/政策）\n\n'
+    md += '### \U0001f4a1 \u5b66\u4e60\u5efa\u8bae\n\n'
+    md += '1. \u7cbe\u8bfb2\u7bc7\u8bc4\u8bba\uff0c\u5206\u6790\u8bba\u8bc1\u7ed3\u6784\n'
+    md += '2. \u6458\u6284\u91d1\u53e5\uff0c\u7528\u4e8e\u7533\u8bba\u5199\u4f5c\n'
+    md += '3. \u65f6\u653f\u6807\u6ce8\u8003\u70b9\uff08\u6570\u5b57/\u4f1a\u8bae/\u653f\u7b56\uff09\n\n'
     md += '---\n\n'
-    md += '📄 PDF已发送，请查收附件\n\n'
-    md += '> 每天进步一点点，一次上岸江西！💪\n'
+    md += '\U0001f4c4 PDF\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u9644\u4ef6\n\n'
+    md += '> \u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f\uff01\U0001f4aa\n'
 
-    send_text(md)
-    send_file(pdf_path)
+    text_ok = send_text(md)
+    file_ok = send_file(pdf_path)
+    
+    print('  Text: ' + ('OK' if text_ok else 'FAIL'))
+    print('  File: ' + ('OK' if file_ok else 'FAIL'))
 
-    print('\n' + '=' * 40)
+    print('\n' + '=' * 50)
     print('All done!')
-    print('=' * 40)
+    print('=' * 50)
 
 if __name__ == '__main__':
-    main()
+    主函数()
