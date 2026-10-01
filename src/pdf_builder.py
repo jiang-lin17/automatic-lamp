@@ -190,11 +190,12 @@ class ReportBuilder:
         }
 
     # ========== 章节标题组件 ==========
-    def _section_header(self, title: str, subtitle: str = ""):
-        """带左侧色条的章节标题（单列表 + LINEBEFORE）。"""
+    def _section_header(self, title: str, subtitle: str = "", bookmark: str = ""):
+        """带左侧色条的章节标题 + PDF 书签目录。"""
         fn = self.font_name
-        title_para = Paragraph(title, self.styles["h1_title"])
-        # 表格宽度直接设为页面可用宽度（A4 170mm 左右，去掉左右边距）
+        # PDF 书签（reportlab 支持 <bookmark> 标签自动生成 Outline）
+        bm_name = bookmark or title.strip()
+        title_para = Paragraph(f'<bookmark name="{bm_name}"/>{title}', self.styles["h1_title"])
         t = Table([[title_para]], colWidths=[170 * mm])
         t.setStyle(TableStyle([
             ("LINEBEFORE", (0, 0), (0, 0), 3.5, Palette.PRIMARY),
@@ -209,38 +210,148 @@ class ReportBuilder:
         return story
 
     # ========== 封面 ==========
-    def _cover(self, date_cn, weekday, days_left, comments_count, news_count, golden_count):
+    def _cover(self, date_cn, weekday, days_left, comments_count, news_count, golden_count, ai_result=None):
+        """封面：大倒计时 + 进度条 + 统计卡片 + 本周日历。"""
+        from datetime import datetime
+        from .config import ExamConfig
         s = self.styles
-        story = []
-        story.append(Spacer(1, 45 * mm))
-        story.append(Paragraph(f"📚 {self.exam_cfg.pdf_title}", s["cover_title"]))
-        story.append(Spacer(1, 4 * mm))
-        story.append(Paragraph(self.exam_cfg.name, s["cover_sub"]))
-        story.append(Spacer(1, 18 * mm))
-        story.append(Paragraph(f"{date_cn}  {weekday}", s["cover_date"]))
-        story.append(Spacer(1, 4 * mm))
-        story.append(Paragraph(f"⏰ 距笔试还有 <b>{days_left}</b> 天", s["cover_days"]))
-        story.append(Spacer(1, 20 * mm))
+        exam_cfg = ExamConfig()
 
-        # 统计卡片（三栏表格）
+        story = []
+        story.append(Spacer(1, 30 * mm))
+        story.append(Paragraph(f"📚 {self.exam_cfg.pdf_title}", s["cover_title"]))
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(self.exam_cfg.name, s["cover_sub"]))
+        story.append(Spacer(1, 10 * mm))
+        story.append(Paragraph(f"{date_cn}  {weekday}", s["cover_date"]))
+
+        # ======= 🔥 大倒计时数字 + 进度条 =======
+        exam_date = exam_cfg.date
+        total_days = (exam_date - datetime.combine(datetime.now().date(), __import__("datetime").time())).days + days_left
+        # 进度条：已过天数 / 总天数
+        if total_days > 0:
+            elapsed = total_days - days_left
+            pct = min(100.0, max(0.0, elapsed / total_days * 100))
+        else:
+            pct = 100.0
+
+        # 大倒计时卡片（居中 Table）
         fn = self.font_name
-        card_data = [
-            [Paragraph("📰<br/><b style='font-size:16px'>" + str(comments_count) + "</b><br/><font size=7 color='#666'>人民日报评论</font>",
-                       ParagraphStyle("scard", parent=s["h2_title"], alignment=TA_CENTER, leading=16)),
-             Paragraph("🔔<br/><b style='font-size:16px'>" + str(news_count) + "</b><br/><font size=7 color='#666'>时政新闻</font>",
-                       ParagraphStyle("scard2", parent=s["h2_title"], alignment=TA_CENTER, leading=16)),
-             Paragraph("💬<br/><b style='font-size:16px'>" + str(golden_count) + "</b><br/><font size=7 color='#666'>申论金句</font>",
-                       ParagraphStyle("scard3", parent=s["h2_title"], alignment=TA_CENTER, leading=16))],
+        days_big_style = ParagraphStyle("dc", parent=s["cover_title"], fontSize=56, leading=60,
+                                        alignment=TA_CENTER, textColor=Palette.PRIMARY)
+        days_unit_style = ParagraphStyle("du", parent=s["cover_sub"], fontSize=13, leading=16,
+                                         alignment=TA_CENTER, textColor=Palette.INK)
+        progress_pct_style = ParagraphStyle("dpct", parent=s["cover_sub"], fontSize=10, leading=13,
+                                            alignment=TA_CENTER, textColor=Palette.ACCENT)
+        countdown_cell = [Paragraph(f"<b>{days_left}</b>", days_big_style),
+                          Paragraph("天 · 距笔试倒计时", days_unit_style),
+                          Paragraph(f"备考进度 <b>{pct:.1f}%</b>  ·  共 {total_days} 天", progress_pct_style)]
+        t_countdown = Table([countdown_cell], colWidths=[150 * mm])
+        t_countdown.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), Palette.PRIMARY_LIGHT),
+            ("BOX", (0, 0), (-1, -1), 1.5, Palette.PRIMARY),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ("FONTNAME", (0, 0), (-1, -1), fn),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ]))
+        story.append(t_countdown)
+        story.append(Spacer(1, 4 * mm))
+
+        # 进度条（50 格模拟进度）
+        bar_cells = []
+        filled = int(round(pct / 2))  # 50 格
+        for i in range(50):
+            color = Palette.PRIMARY if i < filled else Palette.RULE
+            bar_cells.append([Paragraph("&nbsp;", ParagraphStyle("bd", parent=s["bd"], backColor=color, leading=3, fontSize=1))])
+        t_bar = Table([bar_cells[0]], colWidths=[3 * mm] * 50)
+        t_bar.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(t_bar)
+        story.append(Spacer(1, 14 * mm))
+
+        # ======= 统计卡片（三栏） =======
+        ai_on = bool(ai_result and ai_result.get("enabled"))
+        cards = [
+            ["📰", str(comments_count), "人民日报评论"],
+            ["🔔", str(news_count), "时政新闻"],
+            ["💬", str(golden_count), "申论金句"],
         ]
-        t = Table(card_data, colWidths=[50 * mm, 50 * mm, 50 * mm])
-        t.setStyle(TableStyle([
+        if ai_on:
+            cards.append(["🤖", "AI已启用", "增强处理"])
+
+        card_style = ParagraphStyle("cs", parent=s["h2_title"], alignment=TA_CENTER, leading=16)
+        card_data = []
+        row_count = (len(cards) + 2) // 3
+        for r in range(row_count):
+            row = []
+            for c in range(3):
+                idx = r * 3 + c
+                if idx < len(cards):
+                    icon, num, label = cards[idx]
+                    row.append(Paragraph(
+                        f"{icon}<br/><b style='font-size:16px'>{num}</b><br/>"
+                        f"<font size=7 color='#666'>{label}</font>", card_style))
+                else:
+                    row.append(Paragraph("", card_style))
+            card_data.append(row)
+
+        col_widths = [50 * mm, 50 * mm, 50 * mm]
+        t_stats = Table(card_data, colWidths=col_widths)
+        t_stats.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), Palette.ACCENT_LIGHT),
             ("GRID", (0, 0), (-1, -1), 0.3, Palette.RULE),
             ("TOPPADDING", (0, 0), (-1, -1), 14),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
             ("FONTNAME", (0, 0), (-1, -1), fn),
         ]))
-        story.append(t)
+        story.append(t_stats)
+        story.append(Spacer(1, 8 * mm))
+
+        # ======= 📅 本周 7 天小日历条（今日高亮红） =======
+        today = datetime.now()
+        weekdays_cn = ["一", "二", "三", "四", "五", "六", "日"]
+        # 取本周一
+        this_monday = today - __import__("datetime").timedelta(days=today.weekday())
+        cal_cells = []
+        for i in range(7):
+            day = this_monday + __import__("datetime").timedelta(days=i)
+            is_today = day.date() == today.date()
+            bg = Palette.PRIMARY if is_today else Palette.FAINT
+            txt_color = white if is_today else Palette.MUTED
+            day_style = ParagraphStyle("cal" + str(i), parent=s["tiny"],
+                                       alignment=TA_CENTER, textColor=txt_color)
+            num_style = ParagraphStyle("caln" + str(i), parent=s["tiny"],
+                                       alignment=TA_CENTER, textColor=txt_color, fontSize=10)
+            cal_cells.append([
+                Paragraph(f"<b>{weekdays_cn[i]}</b>", day_style),
+                Paragraph(f"{day.day}", num_style),
+            ])
+        # 两行：第一行星期，第二行日期
+        week_row = [[Paragraph(f"<b>{weekdays_cn[i]}</b>",
+                               ParagraphStyle("w" + str(i), parent=s["tiny"], alignment=TA_CENTER,
+                                              textColor=Palette.MUTED if (this_monday + __import__("datetime").timedelta(days=i)).date() != today.date() else white,
+                                              backColor=Palette.PRIMARY if (this_monday + __import__("datetime").timedelta(days=i)).date() == today.date() else Palette.ACCENT_LIGHT))
+                     for i in range(7)]]
+        date_row = [[Paragraph(f"{(this_monday + __import__('datetime').timedelta(days=i)).day}",
+                               ParagraphStyle("d" + str(i), parent=s["tiny"], alignment=TA_CENTER,
+                                              textColor=Palette.INK if (this_monday + __import__("datetime").timedelta(days=i)).date() != today.date() else white,
+                                              backColor=Palette.PRIMARY if (this_monday + __import__("datetime").timedelta(days=i)).date() == today.date() else Palette.ACCENT_LIGHT,
+                                              fontSize=10))
+                     for i in range(7)]]
+        t_cal = Table(week_row + date_row, colWidths=[21 * mm] * 7)
+        t_cal.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.3, Palette.RULE),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("FONTNAME", (0, 0), (-1, -1), fn),
+        ]))
+        story.append(t_cal)
+
         story.append(PageBreak())
         return story
 
@@ -253,7 +364,7 @@ class ReportBuilder:
         subtitle = "人民时评 + 人民锐评 · 全文呈现"
         if ai_on:
             subtitle += " · 🤖 AI 金句精选"
-        story = self._section_header("📰 人民日报评论", subtitle)
+        story = self._section_header("📰 人民日报评论", subtitle, bookmark="人民日报评论")
 
         for i, c in enumerate(comments, 1):
             card = []
@@ -326,7 +437,7 @@ class ReportBuilder:
         sub = "来源：新华网 · 人民网 · 中国政府网"
         if has_points:
             sub += " · 🤖 AI 考点提炼"
-        story = self._section_header("🔔 时政热点", sub)
+        story = self._section_header("🔔 时政热点", sub, bookmark="时政热点")
 
         # 按分类聚合
         cats: Dict[str, List] = {}
@@ -372,7 +483,8 @@ class ReportBuilder:
             return []
 
         story = self._section_header("🤖 AI 每日总评",
-                                     "LiteLLM 多模型驱动 · 一句话抓住最重要的事")
+                                     "LiteLLM 多模型驱动 · 一句话抓住最重要的事",
+                                     bookmark="AI每日总评")
 
         # 重磅大标题
         hl_html = f'<font color="#C62828"><b style="font-size:16px">{ds["headline"]}</b></font>'
@@ -393,7 +505,8 @@ class ReportBuilder:
             return []
 
         story = self._section_header("✍️ AI 申论素材生成",
-                                     "开头段 · 过渡段 · 结尾段 · 关键词")
+                                     "开头段 · 过渡段 · 结尾段 · 关键词",
+                                     bookmark="AI申论素材")
 
         # 主题行
         story.append(Paragraph(
@@ -415,26 +528,56 @@ class ReportBuilder:
             story.append(Paragraph(text, s["bd"]))
             story.append(Spacer(1, 2.5 * mm))
 
-        # 关键词
+        # 🏷️ 关键词气泡云
         keys = sp.get("key_words", [])
         if keys:
             story.append(Paragraph(
-                '<font color="#1565C0" size=10><b>🏷️ 今日关键词</b></font>',
+                '<font color="#1565C0" size=10><b>🏷️ 今日关键词气泡云</b></font>',
                 s["art_meta"]))
-            # 用表格做胶囊标签（3 列）
-            tag_cells = [[Paragraph(f'<font color="#1565C0">{k}</font>',
-                                    ParagraphStyle("tag", fontSize=9, leading=12,
-                                                   alignment=TA_CENTER))]
-                         for k in keys]
-            t = Table(tag_cells, colWidths=[55 * mm, 55 * mm, 55 * mm])
-            t.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), Palette.ACCENT_LIGHT),
-                ("GRID", (0, 0), (-1, -1), 0.3, Palette.ACCENT),
+            import colorsys
+            # 生成柔和的随机颜色（HSL 色相均匀分布 + 固定柔和明度）
+            palette = [
+                Palette.PRIMARY, Palette.ACCENT,
+                HexColor("#00897B"), HexColor("#6A1B9A"),
+                HexColor("#EF6C00"), HexColor("#558B2F"),
+                HexColor("#C62828"), HexColor("#283593"),
+            ]
+            # 大小随机化（让前几个关键词更大更显眼）
+            MAX_FONT = 14
+            MIN_FONT = 8
+            tag_cells = []
+            per_row = 4
+            for i, k in enumerate(keys):
+                # 位置越靠前越大（越"重要"）
+                importance = max(0, 1 - i / max(len(keys), 1))
+                font_size = MIN_FONT + int((MAX_FONT - MIN_FONT) * importance)
+                color = palette[i % len(palette)]
+                bg = Palette.ACCENT_LIGHT if i % 2 == 0 else Palette.PRIMARY_LIGHT
+                tag_cells.append([
+                    Paragraph(
+                        f'<font color="#{color.hexval()[2:] if hasattr(color, "hexval") else "333333"}" size={font_size}><b>{k}</b></font>',
+                        ParagraphStyle("tag" + str(i), fontSize=font_size, leading=font_size + 4,
+                                       alignment=TA_CENTER, textColor=color, backColor=bg))
+                ])
+            # 按 per_row 个一行排布
+            rows = []
+            for i in range(0, len(tag_cells), per_row):
+                row = tag_cells[i : i + per_row]
+                # 补齐空位
+                while len(row) < per_row:
+                    row.append([Paragraph("", ParagraphStyle("empty", fontSize=8, leading=12))])
+                rows.append([c[0] for c in row])
+            col_w = [42 * mm] * per_row
+            t_tags = Table(rows, colWidths=col_w)
+            t_tags.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), Palette.RULE),
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ]))
-            story.append(t)
+            story.append(t_tags)
 
         story.append(PageBreak())
         return story
@@ -448,7 +591,7 @@ class ReportBuilder:
         sub = "从当日评论中摘录的精彩语句"
         if ai_on:
             sub += " · 🤖 优先 AI 精选"
-        story = self._section_header("📬 申论金句积累", sub)
+        story = self._section_header("📬 申论金句积累", sub, bookmark="金句积累")
 
         # 优先 AI 金句
         all_golden = []
@@ -488,7 +631,7 @@ class ReportBuilder:
         sub = ""
         if ai_on:
             sub = "（AI 已部分覆盖时政考点 + 申论素材）"
-        story = self._section_header("💡 每日学习贴士", sub)
+        story = self._section_header("💡 每日学习贴士", sub, bookmark="学习贴士")
         tips = [
             ("📖", "精读 2 篇人民日报评论，注意文章结构和论证方法"),
             ("✍️", "摘抄 3–5 个金句，尝试用在申论写作中"),
@@ -541,7 +684,7 @@ class ReportBuilder:
 
         story = []
         story += self._cover(date_cn, weekday, days_left,
-                             len(comments), len(news_list), total_golden)
+                             len(comments), len(news_list), total_golden, ai_result)
         story += self._comments_section(comments, ai_result)
         story += self._news_section(news_list)
         # AI 板块：每日总评 → 考点（已嵌在新闻里）→ 申论素材 → 金句汇总
