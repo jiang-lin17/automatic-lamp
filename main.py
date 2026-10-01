@@ -589,7 +589,7 @@ def main():
         print('  - [' + n['source'] + '] ' + t)
 
     print('')
-    print('[3/4] 生成PDF中...')
+    print('[3/4] Generating PDF...')
     try:
         generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, pdf_path)
         fsize = os.path.getsize(pdf_path)
@@ -599,7 +599,7 @@ def main():
         sys.exit(1)
 
     print('')
-    打印('[4/4] 正在推送到企业微信...')
+    print('[4/4] Pushing to WeCom...')
     total_golden = sum(len(c['golden']) for c in comments)
     msg = build_wecom_message(date_cn, weekday, days_left, len(comments), len(news_list), total_golden)
     text_ok = send_wecom_text(msg)
