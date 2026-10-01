@@ -194,11 +194,16 @@ class ReportBuilder:
             story.append(Spacer(1, 2 * mm))
             for j, n in enumerate(items, 1):
                 story.append(Paragraph(f"{j}. {n['title']}", s["bdn"]))
+                # 直接显示完整网址（可点击超链接）
                 meta_html = (
-                    f'<font color="#5f6368" size=9>来源：{n["source"]} | '
-                    f'<a href="{n["url"]}" color="#1a73e8">查看原文</a></font>'
+                    f'<font color="#5f6368" size=9>来源：{n["source"]}</font>'
+                )
+                link_html = (
+                    f'<a href="{n["url"]}" color="#1a73e8">'
+                    f'<font size=8>{n["url"]}</font></a>'
                 )
                 story.append(Paragraph(meta_html, s["mt"]))
+                story.append(Paragraph(link_html, s["mt"]))
                 if n.get("summary"):
                     story.append(Paragraph(
                         f'<font color="#5f6368" size=9>摘要：{n["summary"]}</font>', s["mt"]))
