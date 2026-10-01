@@ -424,7 +424,9 @@ class ReportBuilder:
             card.append(Spacer(1, 1.5 * mm))
             card.append(HRFlowable(width="100%", thickness=0.4, color=Palette.RULE,
                                     spaceAfter=4 * mm, spaceBefore=0))
-            story.append(KeepTogether(card))
+            # 注意：不用 KeepTogether — 长评论卡（标题+正文+金句框）可能超过一页，
+            # KeepTogether 会先插空白页再放到下一页。评论卡本身有分隔线，跨页无影响。
+            story.extend(card)
 
         story.append(PageBreak())
         return story
