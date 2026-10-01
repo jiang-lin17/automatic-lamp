@@ -7,8 +7,70 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 
 WECOM_WEBHOOK = os.environ.get('WECOM_WEBHOOK', '')
-EXAM_NAME = '2027\x5e74\x6c5f\x897f\x7701\x8003'
 EXAM_DATE = datetime(2027, 3, 25)
+
+T = {
+    'exam_name': '2027\u5e74\u6c5f\u897f\u7701\u8003',
+    'cover_title': '\U0001f4da 2027\u5e74\u6c5f\u897f\u7701\u8003\u6bcf\u65e5\u5907\u8003\u8d44\u6599',
+    'cover_sub': '2027\u5e74\u6c5f\u897f\u7701\u8003',
+    'cover_countdown': '\u23f0 \u8ddd\u7b14\u8bd5\u8fd8\u6709 ',
+    'cover_countdown_end': ' \u5929',
+    'cover_footer': '\u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f \U0001f4aa',
+    'c1': '\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba',
+    'c2': '\u65f6\u653f\u65b0\u95fb',
+    'c3': '\u91d1\u53e5\u6458\u5f55',
+    'unit_pian': '\u7bc7',
+    'unit_tiao': '\u6761',
+    'unit_ju': '\u53e5',
+    'h_comments': '\U0001f4f0 \u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba',
+    'h_comments_sub': '\u7cbe\u9009\u5f53\u65e5\u4eba\u6c11\u65f6\u8bc4\u3001\u4eba\u6c11\u9510\u8bc4\uff0c\u5168\u6587\u5448\u73b0',
+    'col_shiping': '\u4eba\u6c11\u65f6\u8bc4',
+    'col_ruiping': '\u4eba\u6c11\u9510\u8bc4',
+    'lanmu': '\u680f\u76ee\uff1a',
+    'author': ' | \u4f5c\u8005\uff1a',
+    'view_original': '\u67e5\u770b\u539f\u6587',
+    'golden_title': '\U0001f4a1 \u91d1\u53e5\u6458\u5f55',
+    'more_content': '...\uff08\u5269\u4f59\u5185\u5bb9\u8bf7\u67e5\u770b\u539f\u6587\uff09',
+    'click_original': '\u70b9\u51fb\u67e5\u770b\u539f\u6587',
+    'h_news': '\U0001f514 \u65f6\u653f\u70ed\u70b9',
+    'h_news_sub': '\u5f53\u65e5\u91cd\u8981\u65f6\u653f\u65b0\u95fb\u6c47\u603b\uff0c\u6765\u6e90\uff1a\u65b0\u534e\u7f51\u3001\u4eba\u6c11\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51',
+    'cat_politics': '\u65f6\u653f\u8981\u95fb',
+    'cat_domestic': '\u56fd\u5185\u8981\u95fb',
+    'source_people': '\u4eba\u6c11\u7f51',
+    'source_xinhua': '\u65b0\u534e\u7f51',
+    'source_gov': '\u4e2d\u56fd\u653f\u5e9c\u7f51',
+    'from': '\u6765\u6e90\uff1a',
+    'summary': '\u6458\u8981\uff1a',
+    'h_golden': '\U0001f4ac \u7533\u8bba\u91d1\u53e5\u79ef\u7d2f',
+    'h_golden_sub': '\u4ece\u5f53\u65e5\u8bc4\u8bba\u6587\u7ae0\u4e2d\u6458\u5f55\u7684\u7cbe\u5f69\u8bed\u53e5',
+    'golden_empty': '\u4eca\u65e5\u91d1\u53e5\u5f85\u79ef\u7d2f\uff08\u5efa\u8bae\u9605\u8bfb\u8bc4\u8bba\u6587\u7ae0\u81ea\u884c\u6458\u6284\uff09',
+    'h_tips': '\U0001f4a1 \u5b66\u4e60\u5c0f\u8d34\u58eb',
+    'tip1': '1. \u7cbe\u8bfb2\u7bc7\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba\uff0c\u6ce8\u610f\u6587\u7ae0\u7ed3\u6784\u548c\u8bba\u8bc1\u65b9\u6cd5',
+    'tip2': '2. \u6458\u62843-5\u4e2a\u91d1\u53e5\uff0c\u5c1d\u8bd5\u7528\u5728\u7533\u8bba\u5199\u4f5c\u4e2d',
+    'tip3': '3. \u65f6\u653f\u65b0\u95fb\u4e2d\u6ce8\u610f\u6570\u5b57\u7c7b\u3001\u4f1a\u8bae\u7c7b\u3001\u653f\u7b56\u7c7b\u8003\u70b9',
+    'tip4': '4. \u7ed3\u5408\u70ed\u70b9\u601d\u8003\u7533\u8bba\u4f5c\u6587\u7684\u7acb\u610f\u548c\u5206\u8bba\u70b9',
+    'tip5': '5. \u6bcf\u5929\u575a\u6301\u9605\u8bfb\uff0c\u57f9\u517b\u5b98\u65b9\u8bed\u611f\u548c\u653f\u7b56\u601d\u7ef4',
+    'footer_line1': '\u672c\u8d44\u6599\u7531 GitHub Actions \u81ea\u52a8\u751f\u6210 | \u6570\u636e\u6765\u6e90\uff1a\u4eba\u6c11\u7f51\u3001\u65b0\u534e\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51',
+    'footer_line2': '\u751f\u6210\u65f6\u95f4\uff1a',
+    'push_title': '\U0001f4da 2027\u5e74\u6c5f\u897f\u7701\u8003\u6bcf\u65e5\u5907\u8003\u8d44\u6599 - ',
+    'push_days': '\u23f0 \u8ddd2027\u5e74\u6c5f\u897f\u7701\u8003\u7b14\u8bd5\u8fd8\u6709 **',
+    'push_days_end': '** \u5929',
+    'push_content': '\U0001f4f0 \u4eca\u65e5\u5185\u5bb9',
+    'push_comments': '- **\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba**\uff1a',
+    'push_comments_end': '\u7bc7\uff08\u5168\u6587+\u91d1\u53e5\uff09',
+    'push_news': '- **\u65f6\u653f\u70ed\u70b9**\uff1a',
+    'push_news_end': '\u6761\uff08\u65b0\u534e\u7f51+\u4e2d\u56fd\u653f\u5e9c\u7f51\uff09',
+    'push_golden': '- **\u91d1\u53e5\u79ef\u7d2f**\uff1a',
+    'push_golden_end': '\u53e5',
+    'push_tips': '\U0001f4a1 \u5b66\u4e60\u5efa\u8bae',
+    'push_tip1': '1. \u7cbe\u8bfb2\u7bc7\u8bc4\u8bba\uff0c\u5206\u6790\u8bba\u8bc1\u7ed3\u6784',
+    'push_tip2': '2. \u6458\u6284\u91d1\u53e5\uff0c\u7528\u4e8e\u7533\u8bba\u5199\u4f5c',
+    'push_tip3': '3. \u65f6\u653f\u6807\u6ce8\u8003\u70b9\uff08\u6570\u5b57/\u4f1a\u8bae/\u653f\u7b56\uff09',
+    'push_pdf': '\U0001f4c4 PDF\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u9644\u4ef6',
+    'push_footer': '\u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f\uff01\U0001f4aa',
+    'weekdays': ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09', '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5'],
+    'date_fmt_cn': '%Y\u5e74%m\u6708%d\u65e5',
+}
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -24,10 +86,9 @@ def get_target_date():
     return yesterday
 
 def format_date(date):
-    weekdays = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09', '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5']
     date_str = date.strftime('%Y-%m-%d')
-    date_cn = date.strftime('%Y\u5e74%m\u6708%d\u65e5')
-    weekday = weekdays[date.weekday()]
+    date_cn = date.strftime(T['date_fmt_cn'])
+    weekday = T['weekdays'][date.weekday()]
     days_left = (EXAM_DATE - date).days
     return date_str, date_cn, weekday, days_left
 
@@ -47,7 +108,7 @@ def fetch_comments():
                 article = fetch_article_full(full_url, 'gbk')
                 comments.append({
                     'title': text,
-                    'column': '\u4eba\u6c11\u65f6\u8bc4',
+                    'column': T['col_shiping'],
                     'url': full_url,
                     'summary': article['summary'],
                     'content': article['content'],
@@ -68,7 +129,7 @@ def fetch_comments():
                     article = fetch_article_full(full_url, 'gbk')
                     comments.append({
                         'title': text,
-                        'column': '\u4eba\u6c11\u9510\u8bc4',
+                        'column': T['col_ruiping'],
                         'url': full_url,
                         'summary': article['summary'],
                         'content': article['content'],
@@ -111,16 +172,16 @@ def fetch_article_full(url, encoding='utf-8'):
                 result['summary'] = first[:150] + '...' if len(first) > 150 else first
             
             for p in paragraphs:
-                if len(p) < 100 and ('\u201c' in p or '\u201d' in p or '"' in p):
+                if len(p) < 100 and ('"' in p or '\u201c' in p or '\u201d' in p):
                     result['golden'].append(p.strip())
                 if len(result['golden']) >= 5:
                     break
         
         if not result['summary']:
-            result['summary'] = '\u70b9\u51fb\u67e5\u770b\u539f\u6587'
+            result['summary'] = T['click_original']
             
     except Exception as e:
-        result['summary'] = '\u70b9\u51fb\u67e5\u770b\u539f\u6587'
+        result['summary'] = T['click_original']
         print('fetch article error: ' + str(e))
     
     return result
@@ -128,7 +189,7 @@ def fetch_article_full(url, encoding='utf-8'):
 def fetch_news():
     news_list = []
     
-    # Source 1: 新华网时政
+    # Source 1: xinhuanet politics
     print('  [source 1] xinhuanet politics...')
     try:
         url = 'http://www.xinhuanet.com/politics/'
@@ -150,8 +211,8 @@ def fetch_news():
                 news_list.append({
                     'title': title,
                     'url': full_url,
-                    'source': '\u65b0\u534e\u7f51',
-                    'category': '\u65f6\u653f\u8981\u95fb',
+                    'source': T['source_xinhua'],
+                    'category': T['cat_politics'],
                     'summary': summary
                 })
                 count += 1
@@ -161,7 +222,7 @@ def fetch_news():
     except Exception as e:
         print('    xinhuanet fail: ' + str(e))
     
-    # Source 2: 人民网时政新闻（备用，可能403）
+    # Source 2: people politics (may 403)
     print('  [source 2] people politics...')
     try:
         url = 'http://politics.people.com.cn/GB/1024/index.html'
@@ -179,8 +240,8 @@ def fetch_news():
                     news_list.append({
                         'title': title,
                         'url': full_url,
-                        'source': '\u4eba\u6c11\u7f51',
-                        'category': '\u65f6\u653f\u8981\u95fb',
+                        'source': T['source_people'],
+                        'category': T['cat_politics'],
                         'summary': summary
                     })
                     count += 1
@@ -192,7 +253,7 @@ def fetch_news():
     except Exception as e:
         print('    people fail: ' + str(e))
     
-    # Source 3: 中国政府网
+    # Source 3: gov.cn
     print('  [source 3] gov.cn...')
     try:
         url = 'https://www.gov.cn/yaowen/'
@@ -212,8 +273,8 @@ def fetch_news():
                         news_list.append({
                             'title': title,
                             'url': full_url,
-                            'source': '\u4e2d\u56fd\u653f\u5e9c\u7f51',
-                            'category': '\u56fd\u5185\u8981\u95fb',
+                            'source': T['source_gov'],
+                            'category': T['cat_domestic'],
                             'summary': ''
                         })
                         count += 1
@@ -225,8 +286,8 @@ def fetch_news():
     except Exception as e:
         print('    gov fail: ' + str(e))
     
-    # Source 4: 新华网要闻
-    print('  [source 4] xinhuanet head...')
+    # Source 4: news.cn head
+    print('  [source 4] news.cn head...')
     try:
         url = 'http://www.news.cn/'
         resp = requests.get(url, headers=HEADERS, timeout=15)
@@ -239,14 +300,14 @@ def fetch_news():
             href = link.get('href', '')
             if (title and len(title) > 18 and 
                 'news.cn' in href and
-                ('/202609' in href or '/202610' in href) and
+                '/2026' in href and
                 ('.htm' in href or '.html' in href)):
                 full_url = href if href.startswith('http') else href
                 news_list.append({
                     'title': title,
                     'url': full_url,
-                    'source': '\u65b0\u534e\u7f51',
-                    'category': '\u56fd\u5185\u8981\u95fb',
+                    'source': T['source_xinhua'],
+                    'category': T['cat_domestic'],
                     'summary': ''
                 })
                 count += 1
@@ -329,19 +390,20 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm, title='JiangxiGK Daily', author='GK Helper')
     story = []
 
+    # Cover
     story.append(Spacer(1, 35*mm))
-    story.append(Paragraph('\U0001f4da ' + EXAM_NAME + '\u6bcf\u65e5\u5907\u8003\u8d44\u6599', s_ct))
+    story.append(Paragraph(T['cover_title'], s_ct))
     story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(EXAM_NAME, s_cs))
+    story.append(Paragraph(T['cover_sub'], s_cs))
     story.append(Spacer(1, 10*mm))
     story.append(Paragraph(date_cn + ' ' + weekday, s_cd))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph('\u23f0 \u8ddd\u7b14\u8bd5\u8fd8\u6709 ' + str(days_left) + ' \u5929', s_cs))
+    story.append(Paragraph(T['cover_countdown'] + str(days_left) + T['cover_countdown_end'], s_cs))
     story.append(Spacer(1, 12*mm))
 
     ov = [
-        [Paragraph('\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba', s_th), Paragraph('\u65f6\u653f\u65b0\u95fb', s_th), Paragraph('\u91d1\u53e5\u6458\u5f55', s_th)],
-        [Paragraph(str(len(comments)) + '\u7bc7', s_td), Paragraph(str(len(news_list)) + '\u6761', s_td), Paragraph(str(len(comments)*3) + '\u53e5', s_td)],
+        [Paragraph(T['c1'], s_th), Paragraph(T['c2'], s_th), Paragraph(T['c3'], s_th)],
+        [Paragraph(str(len(comments)) + T['unit_pian'], s_td), Paragraph(str(len(news_list)) + T['unit_tiao'], s_td), Paragraph(str(len(comments)*3) + T['unit_ju'], s_td)],
     ]
     t = Table(ov, colWidths=[50*mm, 50*mm, 50*mm])
     t.setStyle(TableStyle([
@@ -357,18 +419,20 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     ]))
     story.append(t)
     story.append(Spacer(1, 20*mm))
-    story.append(Paragraph('\u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f \U0001f4aa', s_cs))
+    story.append(Paragraph(T['cover_footer'], s_cs))
     story.append(PageBreak())
 
-    story.append(Paragraph('\U0001f4f0 \u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba', s_h1))
+    # Comments
+    story.append(Paragraph(T['h_comments'], s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('\u7cbe\u9009\u5f53\u65e5\u4eba\u6c11\u65f6\u8bc4\u3001\u4eba\u6c11\u9510\u8bc4\uff0c\u5168\u6587\u5448\u73b0', s_mt))
+    story.append(Paragraph(T['h_comments_sub'], s_mt))
     story.append(Spacer(1, 4*mm))
 
     for i, c in enumerate(comments, 1):
         story.append(Paragraph(str(i) + '. ' + c['title'], s_h2))
-        author_info = (' | \u4f5c\u8005\uff1a' + c['author']) if c['author'] else ''
-        story.append(Paragraph('\u680f\u76ee\uff1a' + c['column'] + author_info + ' | <a href="' + c['url'] + '" color="#1a73e8">\u67e5\u770b\u539f\u6587</a>', s_mt))
+        author_info = (T['author'] + c['author']) if c['author'] else ''
+        meta = T['lanmu'] + c['column'] + author_info + ' | <a href="' + c['url'] + '" color="#1a73e8">' + T['view_original'] + '</a>'
+        story.append(Paragraph(meta, s_mt))
         story.append(Spacer(1, 2*mm))
         
         if c['content']:
@@ -376,13 +440,13 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
             for para in c['content'][:max_paras]:
                 story.append(Paragraph(para, s_bd))
             if len(c['content']) > max_paras:
-                story.append(Paragraph('...\uff08\u5269\u4f59\u5185\u5bb9\u8bf7\u67e5\u770b\u539f\u6587\uff09', s_mt))
+                story.append(Paragraph(T['more_content'], s_mt))
         else:
             story.append(Paragraph(c['summary'], s_bd))
         
         if c['golden']:
             story.append(Spacer(1, 3*mm))
-            story.append(Paragraph('\U0001f4a1 \u91d1\u53e5\u6458\u5f55', s_h3))
+            story.append(Paragraph(T['golden_title'], s_h3))
             for gs in c['golden'][:3]:
                 story.append(Paragraph('\u201c' + gs + '\u201d', s_qt))
                 story.append(Spacer(1, 1*mm))
@@ -391,9 +455,10 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     
     story.append(PageBreak())
 
-    story.append(Paragraph('\U0001f514 \u65f6\u653f\u70ed\u70b9', s_h1))
+    # News
+    story.append(Paragraph(T['h_news'], s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('\u5f53\u65e5\u91cd\u8981\u65f6\u653f\u65b0\u95fb\u6c47\u603b\uff0c\u6765\u6e90\uff1a\u65b0\u534e\u7f51\u3001\u4eba\u6c11\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51', s_mt))
+    story.append(Paragraph(T['h_news_sub'], s_mt))
     story.append(Spacer(1, 4*mm))
 
     cats = {}
@@ -408,17 +473,19 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
         story.append(Spacer(1, 2*mm))
         for j, n in enumerate(items, 1):
             story.append(Paragraph(str(j) + '. ' + n['title'], s_bdn))
-            story.append(Paragraph('<font color="#5f6368" size=9>\u6765\u6e90\uff1a' + n['source'] + ' | <a href="' + n['url'] + '" color="#1a73e8">\u67e5\u770b\u539f\u6587</a></font>', s_mt))
+            meta = '<font color="#5f6368" size=9>' + T['from'] + n['source'] + ' | <a href="' + n['url'] + '" color="#1a73e8">' + T['view_original'] + '</a></font>'
+            story.append(Paragraph(meta, s_mt))
             if n['summary']:
-                story.append(Paragraph('<font color="#5f6368" size=9>\u6458\u8981\uff1a' + n['summary'] + '</font>', s_mt))
+                story.append(Paragraph('<font color="#5f6368" size=9>' + T['summary'] + n['summary'] + '</font>', s_mt))
             story.append(Spacer(1, 2*mm))
         story.append(Spacer(1, 3*mm))
     
     story.append(PageBreak())
 
-    story.append(Paragraph('\U0001f4ac \u7533\u8bba\u91d1\u53e5\u79ef\u7d2f', s_h1))
+    # Golden sentences
+    story.append(Paragraph(T['h_golden'], s_h1))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('\u4ece\u5f53\u65e5\u8bc4\u8bba\u6587\u7ae0\u4e2d\u6458\u5f55\u7684\u7cbe\u5f69\u8bed\u53e5', s_mt))
+    story.append(Paragraph(T['h_golden_sub'], s_mt))
     story.append(Spacer(1, 4*mm))
 
     all_golden = []
@@ -430,19 +497,14 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
             story.append(Paragraph(str(idx) + '. \u201c' + gs + '\u201d', s_qt))
             story.append(Spacer(1, 2*mm))
     else:
-        story.append(Paragraph('\u4eca\u65e5\u91d1\u53e5\u5f85\u79ef\u7d2f\uff08\u5efa\u8bae\u9605\u8bfb\u8bc4\u8bba\u6587\u7ae0\u81ea\u884c\u6458\u6284\uff09', s_bd))
+        story.append(Paragraph(T['golden_empty'], s_bd))
     
     story.append(Spacer(1, 8*mm))
 
-    story.append(Paragraph('\U0001f4a1 \u5b66\u4e60\u5c0f\u8d34\u58eb', s_h1))
+    # Tips
+    story.append(Paragraph(T['h_tips'], s_h1))
     story.append(Spacer(1, 3*mm))
-    tips = [
-        '1. \u7cbe\u8bfb2\u7bc7\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba\uff0c\u6ce8\u610f\u6587\u7ae0\u7ed3\u6784\u548c\u8bba\u8bc1\u65b9\u6cd5',
-        '2. \u6458\u62843-5\u4e2a\u91d1\u53e5\uff0c\u5c1d\u8bd5\u7528\u5728\u7533\u8bba\u5199\u4f5c\u4e2d',
-        '3. \u65f6\u653f\u65b0\u95fb\u4e2d\u6ce8\u610f\u6570\u5b57\u7c7b\u3001\u4f1a\u8bae\u7c7b\u3001\u653f\u7b56\u7c7b\u8003\u70b9',
-        '4. \u7ed3\u5408\u70ed\u70b9\u601d\u8003\u7533\u8bba\u4f5c\u6587\u7684\u7acb\u610f\u548c\u5206\u8bba\u70b9',
-        '5. \u6bcf\u5929\u575a\u6301\u9605\u8bfb\uff0c\u57f9\u517b\u5b98\u65b9\u8bed\u611f\u548c\u653f\u7b56\u601d\u7ef4',
-    ]
+    tips = [T['tip1'], T['tip2'], T['tip3'], T['tip4'], T['tip5']]
     for tip in tips:
         story.append(Paragraph(tip, s_bl))
         story.append(Spacer(1, 2*mm))
@@ -450,9 +512,9 @@ def generate_pdf(comments, news_list, date_str, date_cn, weekday, days_left, out
     story.append(Spacer(1, 10*mm))
     story.append(Paragraph('---', s_bd))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph('<font color="#5f6368" size=8>\u672c\u8d44\u6599\u7531 GitHub Actions \u81ea\u52a8\u751f\u6210 | \u6570\u636e\u6765\u6e90\uff1a\u4eba\u6c11\u7f51\u3001\u65b0\u534e\u7f51\u3001\u4e2d\u56fd\u653f\u5e9c\u7f51</font>', s_mt))
+    story.append(Paragraph('<font color="#5f6368" size=8>' + T['footer_line1'] + '</font>', s_mt))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph('<font color="#5f6368" size=8>\u751f\u6210\u65f6\u95f4\uff1a' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '</font>', s_mt))
+    story.append(Paragraph('<font color="#5f6368" size=8>' + T['footer_line2'] + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '</font>', s_mt))
 
     doc.build(story)
     print('PDF OK: ' + output_path)
@@ -510,14 +572,14 @@ def send_file(file_path):
 
 def main():
     print('=' * 50)
-    print('JiangxiGK Daily Report v2.0')
+    print('JiangxiGK Daily Report v3.0')
     print('=' * 50)
 
     target_date = get_target_date()
     date_str, date_cn, weekday, days_left = format_date(target_date)
     print('Date: ' + date_cn + ' ' + weekday)
     print('Days left: ' + str(days_left))
-    print('Webhook: ' + ('YES' if WECOM_WEBHOOK else 'NO'))
+    print('Webhook configured: ' + ('YES' if WECOM_WEBHOOK else 'NO'))
 
     os.makedirs('./output', exist_ok=True)
     pdf_path = './output/meiriziliao_' + date_str + '.pdf'
@@ -545,21 +607,21 @@ def main():
 
     print('\n[4/4] 推送到企业微信...')
     total_golden = sum(len(c['golden']) for c in comments)
-    md = '## \U0001f4da ' + EXAM_NAME + '\u6bcf\u65e5\u5907\u8003\u8d44\u6599 - ' + date_cn + ' ' + weekday + '\n\n'
-    md += '\u23f0 \u8ddd' + EXAM_NAME + '\u7b14\u8bd5\u8fd8\u6709 **' + str(days_left) + '** \u5929\n\n'
+    md = '## ' + T['push_title'] + date_cn + ' ' + weekday + '\n\n'
+    md += T['push_days'] + str(days_left) + T['push_days_end'] + '\n\n'
     md += '---\n\n'
-    md += '### \U0001f4f0 \u4eca\u65e5\u5185\u5bb9\n\n'
-    md += '- **\u4eba\u6c11\u65e5\u62a5\u8bc4\u8bba**\uff1a' + str(len(comments)) + '\u7bc7\uff08\u5168\u6587+\u91d1\u53e5\uff09\n'
-    md += '- **\u65f6\u653f\u70ed\u70b点**\uff1a' + str(len(news_list)) + '\u6761\uff08\u65b0\u534e\u7f51+\u4e2d\u56fd\u653f\u5e9c\u7f51\uff09\n'
-    md += '- **\u91d1\u53e5\u79积\u7d2f**\uff1a' + str(total_golden) + '\u53e5\n\n'
+    md += '### ' + T['push_content'] + '\n\n'
+    md += T['push_comments'] + str(len(comments)) + T['push_comments_end'] + '\n'
+    md += T['push_news'] + str(len(news_list)) + T['push_news_end'] + '\n'
+    md += T['push_golden'] + str(total_golden) + T['push_golden_end'] + '\n\n'
     md += '---\n\n'
-    md += '### \U0001f4a1 \u5b66\u4e60\u5efa\u8bae\n\n'
-    md += '1. \u7cbe\u8bfb2\u7bc7\u8bc4\u8bba\uff0c\u5206\u6790\u8bba\u8bc1\u7ed3\u6784\n'
-    md += '2. \u6458\u6284\u91d1\u53e5\uff0c\u7528\u4e8e\u7533\u8bba\u5199\u4f5c\n'
-    md += '3. \u65f6\u653f\u6807\u6ce8\u8003\u70b9\uff08\u6570\u5b57/\u4f1a\u8bae/\u653f\u7b56\uff09\n\n'
+    md += '### ' + T['push_tips'] + '\n\n'
+    md += T['push_tip1'] + '\n'
+    md += T['push_tip2'] + '\n'
+    md += T['push_tip3'] + '\n\n'
     md += '---\n\n'
-    md += '\U0001f4c4 PDF\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u9644\u4ef6\n\n'
-    md += '> \u6bcf\u5929\u8fdb\u6b65\u4e00\u70b9\u70b9\uff0c\u4e00\u6b21\u4e0a\u5cb8\u6c5f\u897f\uff01\U0001f4aa\n'
+    md += T['push_pdf'] + '\n\n'
+    md += '> ' + T['push_footer'] + '\n'
 
     text_ok = send_text(md)
     file_ok = send_file(pdf_path)
