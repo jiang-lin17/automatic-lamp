@@ -1,4 +1,4 @@
-﻿name: DailyReport
+name: DailyReport
 
 # 每天北京时间 07:00 自动触发，抓取前一天的数据
 # 也可手动触发 (workflow_dispatch)
