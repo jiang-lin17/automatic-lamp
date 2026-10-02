@@ -1,4 +1,4 @@
-"""PDF 生成模块 — 精美 A4 报告。
+﻿"""PDF 生成模块 — 精美 A4 报告。
 
 设计主题：「温暖红 · 学术蓝」，庄重又不失灵动。
   - 封面顶部彩带、大标题居中
@@ -366,6 +366,16 @@ class ReportBuilder:
             subtitle += " · 🤖 AI 金句精选"
         story = self._section_header("📰 人民日报评论", subtitle, bookmark="人民日报评论")
 
+        if not comments:
+            story.append(Paragraph(
+                '<font color=""#C62828"" size=11><b>⚠️ 本次评论抓取不足，请查看 run.log 排查</b></font>',
+                ParagraphStyle("warn", fontSize=11, leading=18, textColor=Palette.PRIMARY, leftIndent=5)))
+            story.append(Paragraph(
+                '<font color=""#888"" size=8>可能原因：人民网临时网络故障、HTTP 请求被拒、HTML 结构变更。系统已自动重试，若持续出现请检查数据源。</font>',
+                ParagraphStyle("warndesc", fontSize=8, leading=14, leftIndent=5)))
+            story.append(Spacer(1, 5 * mm))
+            story.append(PageBreak())
+            return story
         for i, c in enumerate(comments, 1):
             card = []
             # 序号 + 标题 + 栏目
@@ -703,3 +713,4 @@ class ReportBuilder:
 
 # 避免循环引用：utils 在 config 之前 log 的定义
 from .utils import log  # noqa: E402
+

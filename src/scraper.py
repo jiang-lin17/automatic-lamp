@@ -1,4 +1,4 @@
-"""爬虫模块：人民日报评论 + 时政新闻。"""
+﻿""""爬虫模块：人民日报评论 + 时政新闻。"""
 
 from typing import List, Dict, Any, Set
 from urllib.parse import urljoin
@@ -14,15 +14,12 @@ from .config import ContentThresholds, SCRAPE_SOURCES
 # ========== 公共解析 ==========
 
 def _abs_url(base: str, href: str) -> str:
-    """把相对 URL 转成绝对 URL。"""
     if href.startswith("http"):
         return href
-    # 规范化：人民网部分 href 以 / 开头，需用原域名拼接
     return urljoin(base, href)
 
 
 def _text_present(text: str, keywords: List[str]) -> bool:
-    """检查字符串是否**同时**包含所有关键词（支持 {year} 占位符）。"""
     year = str(current_year())
     for kw in keywords:
         k = kw.replace("{year}", year)
@@ -32,28 +29,41 @@ def _text_present(text: str, keywords: List[str]) -> bool:
 
 
 def _extract_paragraphs(soup: BeautifulSoup) -> List[str]:
-    """通用正文提取：依次尝试常见正文容器。"""
+    """通用正文提取：依次尝试常见正文容器，返回所有有效段落。
+
+    覆盖人民网、新华网、中国政府网等主流站点的正文容器选择器。
+    """
     candidates = [
-        soup.find("div", class_="rm_txt_con"),
-        soup.find("div", id="rwb_zw"),
-        soup.find("div", id="detailContent"),
-        soup.find("div", class_="article-content"),
-        soup.find("div", class_="content"),
+        soup.find("div", class_="rm_txt_con"),         # 人民时评/锐评
+        soup.find("div", id="rwb_zw"),                  # 人民网通用
+        soup.find("div", id="detailContent"),           # 新华网
+        soup.find("div", class_="article-content"),     # 通用
+        soup.find("div", class_="content"),             # 通用
+        soup.find("div", class_="TRS_Editor"),          # TRS CMS 系统（gov.cn 常用）
+        soup.find("div", class_="Custom_UnionStyle"),   # 新华网另一种
+        soup.find("div", id="UCAP-CONTENT"),            # 部分新闻站
+        soup.find("article"),                           # HTML5 语义标签兜底
     ]
     for box in candidates:
         if box:
-            return [p.get_text(strip=True) for p in box.find_all("p")]
+            paras = [p.get_text(strip=True) for p in box.find_all("p")]
+            paras = [p for p in paras if len(p) > 10]
+            if len(paras) >= 2:  # 至少 2 段才认为是有效正文
+                return paras
     return []
 
 
 def _extract_author(soup: BeautifulSoup) -> str:
-    """提取作者。"""
-    for cls in ("author", "rm_txt_con_author", "source"):
+    for cls in ("author", "rm_txt_con_author", "source", "editor", "p_jb"):
         div = soup.find("div", class_=cls)
         if div:
             text = div.get_text(strip=True)
             if text:
                 return text[:50]
+    # 兜底：meta 里的 source
+    meta = soup.find("meta", attrs={"name": "author"})
+    if meta and meta.get("content"):
+        return meta["content"][:50]
     return ""
 
 
@@ -61,7 +71,7 @@ def _extract_author(soup: BeautifulSoup) -> str:
 
 def fetch_article_detail(url: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """抓一篇文章的详细内容：正文、摘要、作者、金句。"""
-    result = {"summary": "", "content": [], "author": "", "golden": []}
+    result: Dict[str, Any] = {"summary": "", "content": [], "author": "", "golden": []}
     thresholds = ContentThresholds()
     try:
         resp = http_get(url, encoding=encoding)
@@ -75,7 +85,6 @@ def fetch_article_detail(url: str, encoding: str = "utf-8") -> Dict[str, Any]:
         ]
         result["content"] = paras
 
-        # 摘要：第一段前若干字
         if paras:
             first = paras[0]
             result["summary"] = (
@@ -84,10 +93,9 @@ def fetch_article_detail(url: str, encoding: str = "utf-8") -> Dict[str, Any]:
                 else first
             )
 
-        # 金句：短 + 含引号
         golden: List[str] = []
         for p in paras:
-            if len(p) < thresholds.golden_max_len and ('"' in p or "\u201c" in p):
+            if len(p) < thresholds.golden_max_len and ('"' in p or "\u201c" in p or "\u201d" in p):
                 golden.append(p.strip())
             if len(golden) >= thresholds.golden_per_article:
                 break
@@ -104,8 +112,12 @@ def fetch_article_detail(url: str, encoding: str = "utf-8") -> Dict[str, Any]:
 
 
 def fetch_comments() -> List[Dict[str, Any]]:
-    """抓取人民日报评论（人民时评 + 人民锐评）。"""
+    """抓取人民日报评论（人民时评 + 人民锐评）。
+
+    所有源合并返回；如果最终评论总数 < 2，记录 WARNING 方便排查。
+    """
     comments: List[Dict[str, Any]] = []
+    failed_sources: List[str] = []
 
     for key in ("people_shiping", "people_ruiping"):
         src = SCRAPE_SOURCES[key]
@@ -134,8 +146,19 @@ def fetch_comments() -> List[Dict[str, Any]]:
                 if count >= src["max_items"]:
                     break
             log.info("  [%s] 共 %d 篇", src["name"], count)
+            if count == 0:
+                log.warning("  [%s] 列表页未找到任何匹配链接！目标 href_contains=%s",
+                             src["name"], src.get("href_contains"))
+                failed_sources.append(src["name"])
         except Exception as e:
             log.error("  [%s] 抓取失败: %s", src["name"], e)
+            failed_sources.append(src["name"])
+
+    if failed_sources:
+        log.warning("⚠️ 以下评论源抓取失败或返回 0 条: %s", ", ".join(failed_sources))
+
+    if len(comments) < 2:
+        log.warning("⚠️ 评论总数不足 2 条（实际 %d 条），PDF 评论内容将严重缺失！", len(comments))
 
     return comments
 
@@ -143,7 +166,6 @@ def fetch_comments() -> List[Dict[str, Any]]:
 # ========== 新闻抓取 ==========
 
 def fetch_news_summary(url: str, encoding: str = "utf-8") -> str:
-    """抓新闻摘要（首段）。"""
     thresholds = ContentThresholds()
     try:
         resp = http_get(url, encoding=encoding)
@@ -162,10 +184,9 @@ def fetch_news_summary(url: str, encoding: str = "utf-8") -> str:
 
 
 def fetch_news() -> List[Dict[str, Any]]:
-    """抓取时政新闻。"""
+    """抓取时政新闻。所有源合并去重，最终最多返回 news_max_total 条。"""
     raw_news: List[Dict[str, Any]] = []
 
-    # source_key -> 展示分类
     category_map = {
         "xinhuanet_politics": "时政要闻",
         "people_politics": "时政要闻",
@@ -188,7 +209,6 @@ def fetch_news() -> List[Dict[str, Any]]:
                     continue
                 if not _text_present(href, src.get("href_contains", [])):
                     continue
-                # 额外路径限制
                 if "path_contains" in src:
                     if not _text_present(href, src["path_contains"]):
                         continue
@@ -209,7 +229,6 @@ def fetch_news() -> List[Dict[str, Any]]:
         except Exception as e:
             log.error("  [%s] 抓取失败: %s", src["name"], e)
 
-    # 去重：优先 URL，其次标题
     seen_urls: Set[str] = set()
     seen_titles: Set[str] = set()
     unique: List[Dict[str, Any]] = []
@@ -222,6 +241,8 @@ def fetch_news() -> List[Dict[str, Any]]:
         seen_titles.add(title_key)
         unique.append(n)
 
-    # 限制总数
     thresholds = ContentThresholds()
+    if len(unique) < 8:
+        log.warning("⚠️ 新闻总数不足 8 条（去重后 %d 条）", len(unique))
+
     return unique[:thresholds.news_max_total]
