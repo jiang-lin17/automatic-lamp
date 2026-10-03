@@ -369,10 +369,10 @@ class ReportBuilder:
         if not comments:
             story.append(Paragraph(
                 '<font color="#C62828" size=11><b>⚠️ 本次评论抓取不足，请查看 run.log 排查</b></font>',
-                ParagraphStyle("warn", fontSize=11, leading=18, textColor=Palette.PRIMARY, leftIndent=5)))
+                ParagraphStyle("warn", fontName=self.font_name, fontSize=11, leading=18, textColor=Palette.PRIMARY, leftIndent=5)))
             story.append(Paragraph(
                 '<font color="#888" size=8>可能原因：人民网临时网络故障、HTTP 请求被拒、HTML 结构变更。系统已自动重试，若持续出现请检查数据源。</font>',
-                ParagraphStyle("warndesc", fontSize=8, leading=14, leftIndent=5)))
+                ParagraphStyle("warndesc", fontName=self.font_name, fontSize=8, leading=14, leftIndent=5)))
             story.append(Spacer(1, 5 * mm))
             story.append(PageBreak())
             return story
@@ -568,7 +568,7 @@ class ReportBuilder:
                 tag_cells.append([
                     Paragraph(
                         f'<font color="#{color.hexval()[2:] if hasattr(color, "hexval") else "333333"}" size={font_size}><b>{k}</b></font>',
-                        ParagraphStyle("tag" + str(i), fontSize=font_size, leading=font_size + 4,
+                        ParagraphStyle("tag" + str(i), fontName=self.font_name, fontSize=font_size, leading=font_size + 4,
                                        alignment=TA_CENTER, textColor=color, backColor=bg))
                 ])
             # 按 per_row 个一行排布
