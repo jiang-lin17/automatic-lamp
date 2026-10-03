@@ -209,11 +209,14 @@ def fetch_news() -> List[Dict[str, Any]]:
                     continue
                 if not _text_present(href, src.get("href_contains", [])):
                     continue
-                if "path_contains" in src:
-                    if not _text_present(href, src["path_contains"]):
-                        continue
 
                 full_url = _abs_url(src["list_url"], href)
+                # path 过滤基于绝对 URL：列表页里的相对链接（如 ./202609/content_xxx.htm）
+                # 要拼成绝对地址后才能与 /zhengce/ 这类路径规则匹配
+                if "path_contains" in src:
+                    if not _text_present(full_url, src["path_contains"]):
+                        continue
+
                 summary = fetch_news_summary(full_url, src.get("article_encoding", "utf-8"))
                 raw_news.append({
                     "title": title,

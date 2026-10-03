@@ -103,12 +103,14 @@ SCRAPE_SOURCES = {
         "max_items": 5,
         "min_title_len": 12,
     },
-    # 注：gov.cn/yaowen/ 是 SPA，requests 抓不到。改用 /zhengce/zuixin/
+    # 注：gov.cn/yaowen/ 是 SPA，requests 抓不到；/zhengce/zuixin/ 的列表由 JS 渲染，
+    #     静态 HTML 里只剩页脚链接（会误抓成「中国政府网微博、微信」），故改用 /zhengce/ 栏目页
     "gov_policy": {
         "name": "中国政府网政策动态",
         "source": "中国政府网",
-        "list_url": "https://www.gov.cn/zhengce/zuixin/",
-        "href_contains": [".htm"],
+        "list_url": "https://www.gov.cn/zhengce/",
+        "href_contains": ["content_"],
+        "path_contains": ["/zhengce/"],
         "article_encoding": "utf-8",
         "max_items": 5,
         "min_title_len": 10,
@@ -183,14 +185,18 @@ class AIConfig:
     model: str = os.environ.get("AI_MODEL", "deepseek/deepseek-chat")
     # 可选：自定义 base_url（硅基流动等兼容网关用）
     base_url: str = os.environ.get("AI_BASE_URL", "")
-    # 调用超时秒数
-    timeout: int = 30
+    # 调用超时秒数。方舟/gpt 类接口单次响应常在 30~60s，30s 会把「慢但能成功」的
+    # 请求直接判超时，故放宽到 90s
+    timeout: int = 90
+    # litellm 层重试次数。置 0 关掉 OpenAI SDK 默认的 2 次内部重试，
+    # 否则一次失败最坏耗时 = timeout × 3，会瞬间吃掉整个时间预算
+    num_retries: int = 0
     # 温度（0=稳定，1=创意）
     temperature: float = 0.3
     # 单篇最大输入字符（防止 token 爆）
     max_input_chars_per_article: int = 4000
-    # 最多处理多少条新闻做考点提炼
-    max_news_for_points: int = 10
+    # 最多处理多少条新闻做考点提炼（直接决定 AI 调用次数与总耗时）
+    max_news_for_points: int = 6
     # 申论素材的目标字数
     target_shenlun_chars: int = 300
 

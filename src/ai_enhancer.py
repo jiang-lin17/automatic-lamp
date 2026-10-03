@@ -136,6 +136,7 @@ def _call_llm(system_prompt: str, user_prompt: str,
             ],
             temperature=cfg.temperature,
             timeout=cfg.timeout,
+            num_retries=cfg.num_retries,
         )
         if api_key:
             kwargs["api_key"] = api_key
@@ -415,8 +416,9 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
 
     log.info("🤖 AI 增强启用，model=%s", cfg.model)
 
-    # 总时间预算
-    TOTAL_BUDGET = 480  # 8 分钟
+    # 总时间预算（考点 6 条 + 金句 5 篇 + 申论 + 总评 ≈ 13 次调用，
+    # 按单次 35s 估算约 7.5 分钟，留出余量；workflow 超时为 20 分钟）
+    TOTAL_BUDGET = 600  # 10 分钟
     start = _t.monotonic()
     ok = True
 
