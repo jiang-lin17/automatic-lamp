@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional
 
 import requests
@@ -14,6 +14,13 @@ from tenacity import (
 )
 
 from .config import HttpConfig, ExamConfig
+
+# 中国标准时间（UTC+8）。优先用 zoneinfo；Windows 缺 tzdata 时兜底为固定偏移。
+try:
+    from zoneinfo import ZoneInfo
+    CN_TZ = ZoneInfo("Asia/Shanghai")
+except Exception:  # pragma: no cover - 环境缺少 tzdata 时
+    CN_TZ = timezone(timedelta(hours=8))
 
 
 # ========== 结构化日志 ==========
@@ -168,7 +175,14 @@ def http_get(url: str, encoding: Optional[str] = None,
 WEEKDAYS_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
 def get_target_date(days_ago: int = 1) -> datetime:
-    return datetime.now() - timedelta(days=days_ago)
+    """返回「目标日期」= 上海时区的今天往前 days_ago 天。
+
+    注意：CI runner 是 UTC，直接用 datetime.now() 会在北京时间 0:00~8:00 之间
+    算错一天，故显式取 Asia/Shanghai。返回值保持 naive（与 ExamConfig.date 一致，
+    否则相减会 TypeError）。
+    """
+    now = datetime.now(CN_TZ).replace(tzinfo=None)
+    return now - timedelta(days=days_ago)
 
 def format_date(date: datetime) -> Tuple[str, str, str, int]:
     date_str = date.strftime("%Y-%m-%d")
@@ -179,4 +193,4 @@ def format_date(date: datetime) -> Tuple[str, str, str, int]:
     return date_str, date_cn, weekday, days_left
 
 def current_year() -> int:
-    return datetime.now().year
+    return datetime.now(CN_TZ).year

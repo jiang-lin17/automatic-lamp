@@ -1,4 +1,4 @@
-"""集中配置：所有可配置项在此定义，避免硬编码。"""
+﻿"""集中配置：所有可配置项在此定义，避免硬编码。"""
 
 import os
 from datetime import datetime
@@ -71,7 +71,11 @@ SCRAPE_SOURCES = {
         "list_url": "http://opinion.people.com.cn/GB/8213/49160/49219/index.html",
         "href_contains": ["/n1/", "c461529"],
         "article_encoding": "utf-8",
-        "max_items": 3,
+        "max_items": 2,
+        # 只在目标日期往前 N 天内挑文章（解析不到日期的条目保留）
+        "date_window_days": 20,
+        # 每个源最多为多少条候选抓正文（控成本，避免一次跑几十个请求）
+        "max_fetches": 12,
     },
     "people_ruiping": {
         "name": "人民锐评",
@@ -79,7 +83,9 @@ SCRAPE_SOURCES = {
         "list_url": "http://opinion.people.com.cn/GB/436867/index.html",
         "href_contains": ["/n1/", "c436867"],
         "article_encoding": "utf-8",
-        "max_items": 2,
+        "max_items": 1,
+        "date_window_days": 20,
+        "max_fetches": 10,
     },
     # —— 时政新闻 ——
     "xinhuanet_politics": {
@@ -91,6 +97,8 @@ SCRAPE_SOURCES = {
         "article_encoding": "utf-8",
         "max_items": 6,
         "min_title_len": 15,
+        "date_window_days": 14,
+        "max_fetches": 16,
     },
     # 注：people.com.cn 的 HTTPS 证书有 hostname mismatch 问题，必须走 HTTP
     # 注：人民网已全面升级为 UTF-8
@@ -102,6 +110,8 @@ SCRAPE_SOURCES = {
         "article_encoding": "utf-8",
         "max_items": 5,
         "min_title_len": 12,
+        "date_window_days": 14,
+        "max_fetches": 16,
     },
     # 注：gov.cn/yaowen/ 是 SPA，requests 抓不到；/zhengce/zuixin/ 的列表由 JS 渲染，
     #     静态 HTML 里只剩页脚链接（会误抓成「中国政府网微博、微信」），故改用 /zhengce/ 栏目页
@@ -114,6 +124,9 @@ SCRAPE_SOURCES = {
         "article_encoding": "utf-8",
         "max_items": 5,
         "min_title_len": 10,
+        # gov.cn 的 URL 只有年月（/202609/），日期只能从正文里取，故窗口放宽
+        "date_window_days": 20,
+        "max_fetches": 14,
     },
     "news_cn_headlines": {
         "name": "新华网首页要闻",
@@ -125,6 +138,8 @@ SCRAPE_SOURCES = {
         "article_encoding": "utf-8",
         "max_items": 5,
         "min_title_len": 18,
+        "date_window_days": 14,
+        "max_fetches": 16,
     },
 }
 
@@ -149,6 +164,21 @@ class ContentThresholds:
     news_max_total: int = 15
     # 每条新闻摘要长度
     summary_max_chars: int = 120
+
+
+# ========== 跨天去重配置 ==========
+@dataclass
+class DedupConfig:
+    """解决「每天推同一批文章」：记录已推送 URL，只在没推过的里面挑。
+
+    状态文件由 CI 的 actions/cache 跨天带回；本地跑则落在 state/seen.json。
+    """
+    # 去重状态文件路径
+    state_path: str = "state/seen.json"
+    # 状态保留天数（超期自动清理，控制体积）
+    keep_days: int = 30
+    # 日期窗口解析不到时的兜底窗口
+    fallback_window_days: int = 30
 
 
 # ========== 输出配置 ==========
@@ -197,6 +227,8 @@ class AIConfig:
     max_input_chars_per_article: int = 4000
     # 最多处理多少条新闻做考点提炼（直接决定 AI 调用次数与总耗时）
     max_news_for_points: int = 6
+    # 最多处理多少篇评论做金句精选（单次批量调用，全塞进去会超 token）
+    max_comments_for_golden: int = 4
     # 申论素材的目标字数
     target_shenlun_chars: int = 300
 

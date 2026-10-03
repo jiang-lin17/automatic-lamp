@@ -9,6 +9,7 @@
 """
 
 import os
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -356,12 +357,25 @@ class ReportBuilder:
         return story
 
     # ========== 评论区 ==========
+    def _outline_points(self, content, max_points: int = 4) -> List[str]:
+        """从评论正文里规则提取「论证提纲」：取每段第一个完整句子。"""
+        points: List[str] = []
+        for para in content or []:
+            for seg in re.split(r"[。；;！!？?]", para):
+                seg = seg.strip()
+                if len(seg) >= 8:
+                    points.append(seg[:38] + ("…" if len(seg) > 38 else ""))
+                    break
+            if len(points) >= max_points:
+                break
+        return points
+
     def _comments_section(self, comments, ai_result=None):
         from .config import ContentThresholds
         s = self.styles
         thresholds = ContentThresholds()
         ai_on = bool(ai_result and ai_result.get("enabled"))
-        subtitle = "人民时评 + 人民锐评 · 全文呈现"
+        subtitle = "1 篇精读 + 其余摘要速览"
         if ai_on:
             subtitle += " · 🤖 AI 金句精选"
         story = self._section_header("📰 人民日报评论", subtitle, bookmark="人民日报评论")
@@ -376,67 +390,95 @@ class ReportBuilder:
             story.append(Spacer(1, 5 * mm))
             story.append(PageBreak())
             return story
-        for i, c in enumerate(comments, 1):
-            card = []
-            # 序号 + 标题 + 栏目
-            title_html = (
-                f'<font color="#999" size=11>{i:02d}</font>  '
-                f'<b>{c["title"]}</b>'
-            )
-            card.append(Paragraph(title_html, s["art_title"]))
-            # 栏目 / 作者 / 链接
+
+        def _meta_line(c) -> str:
             author_info = f" · 作者：{c['author']}" if c.get("author") else ""
-            # AI 评论小徽章
+            d = c.get("date") or ""
+            date_info = f" · {d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else ""
             ai_badge = ""
             if ai_on and c.get("ai_comment"):
-                ai_badge = f' · <font color="#1565C0">🤖 AI点评：{c["ai_comment"]}</font>'
-            meta = (
-                f"<font color='#C62828'>▸ {c['column']}</font>{author_info}{ai_badge} · "
+                ai_badge = f' · <font color="#1565C0">🤖 {c["ai_comment"]}</font>'
+            return (
+                f"<font color='#C62828'>▸ {c['column']}</font>{author_info}{date_info}{ai_badge} · "
                 f'<a href="{c["url"]}" color="#1565C0" size=8>查看原文 →</a>'
             )
-            card.append(Paragraph(meta, s["art_meta"]))
-            card.append(Spacer(1, 1.5 * mm))
 
-            # 正文
-            if c["content"]:
-                max_p = min(len(c["content"]), thresholds.max_paragraphs_per_comment)
-                for para in c["content"][:max_p]:
-                    card.append(Paragraph(para, s["bd"]))
-                if len(c["content"]) > max_p:
-                    card.append(Paragraph(
-                        '<font color="#999" size=8>……剩余内容请查看原文</font>', s["bd"]))
-            else:
-                card.append(Paragraph(c["summary"], s["bd"]))
+        # —— 第 1 篇：全文精读 ——
+        first = comments[0]
+        story.append(Paragraph(
+            '<font color="#C62828" size=11><b>📖 今日精读</b></font>', s["art_meta"]))
+        story.append(Paragraph(f'<b>{first["title"]}</b>', s["art_title"]))
+        story.append(Paragraph(_meta_line(first), s["art_meta"]))
+        story.append(Spacer(1, 1.5 * mm))
 
-            # 金句引用框：优先 AI，兜底规则
-            golden_list = (c.get("ai_golden") if ai_on else None) or c.get("golden") or []
-            if golden_list:
-                card.append(Spacer(1, 2 * mm))
-                tag = "🤖 AI 精选金句" if (ai_on and c.get("ai_golden")) else "📬 本文金句"
-                card.append(Paragraph(
-                    f'<font color="#1565C0" size=9><b>{tag}</b></font>', s["art_meta"]))
-                golden_paras = []
-                for gs in golden_list[:thresholds.golden_per_article]:
-                    golden_paras.append(Paragraph(f"\u201c{gs}\u201d", s["quote_text"]))
-                quote_inner = [[p] for p in golden_paras]
-                quote_table = Table(quote_inner, colWidths=[160 * mm])
-                quote_table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), Palette.ACCENT_LIGHT),
-                    ("LINEBEFORE", (0, 0), (0, -1), 2.5, Palette.ACCENT),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ]))
-                card.append(quote_table)
+        if first["content"]:
+            max_p = min(len(first["content"]), thresholds.max_paragraphs_per_comment)
+            for para in first["content"][:max_p]:
+                story.append(Paragraph(para, s["bd"]))
+            if len(first["content"]) > max_p:
+                story.append(Paragraph(
+                    '<font color="#999" size=8>……剩余内容请查看原文</font>', s["bd"]))
+        else:
+            story.append(Paragraph(first["summary"], s["bd"]))
 
-            # 卡片分隔线
-            card.append(Spacer(1, 1.5 * mm))
-            card.append(HRFlowable(width="100%", thickness=0.4, color=Palette.RULE,
-                                    spaceAfter=4 * mm, spaceBefore=0))
-            # 注意：不用 KeepTogether — 长评论卡（标题+正文+金句框）可能超过一页，
-            # KeepTogether 会先插空白页再放到下一页。评论卡本身有分隔线，跨页无影响。
-            story.extend(card)
+        # 🧭 论证提纲（规则提取，帮助快速掌握行文思路）
+        outline = self._outline_points(first.get("content", []))
+        if outline:
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph(
+                '<font color="#1565C0" size=9><b>🧭 论证提纲</b></font>', s["art_meta"]))
+            inner = [[Paragraph(
+                f'<font color="#C62828"><b>{i:02d}</b></font>  {p}', s["news_sum"])]
+                for i, p in enumerate(outline, 1)]
+            t_outline = Table(inner, colWidths=[170 * mm])
+            t_outline.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), Palette.PRIMARY_LIGHT),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.5, Palette.PRIMARY),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(t_outline)
+
+        # 精读篇金句引用框：优先 AI，兜底规则
+        golden_list = (first.get("ai_golden") if ai_on else None) or first.get("golden") or []
+        if golden_list:
+            story.append(Spacer(1, 2 * mm))
+            tag = "🤖 AI 精选金句" if (ai_on and first.get("ai_golden")) else "📬 本文金句"
+            story.append(Paragraph(
+                f'<font color="#1565C0" size=9><b>{tag}</b></font>', s["art_meta"]))
+            quote_inner = [[Paragraph(f"\u201c{gs}\u201d", s["quote_text"])]
+                           for gs in golden_list[:thresholds.golden_per_article]]
+            quote_table = Table(quote_inner, colWidths=[170 * mm])
+            quote_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), Palette.ACCENT_LIGHT),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.5, Palette.ACCENT),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(quote_table)
+
+        # —— 其余：摘要速览卡 ——
+        rest = comments[1:]
+        if rest:
+            story.append(Spacer(1, 5 * mm))
+            story.append(Paragraph(
+                '<font color="#C62828" size=11><b>📌 其他评论速览</b></font>', s["art_meta"]))
+            story.append(Spacer(1, 1.5 * mm))
+            for i, c in enumerate(rest, 1):
+                story.append(Paragraph(
+                    f'<font color="#999" size=11>{i:02d}</font>  <b>{c["title"]}</b>',
+                    s["art_title"]))
+                story.append(Paragraph(_meta_line(c), s["art_meta"]))
+                story.append(Paragraph(c.get("summary") or "点击查看原文", s["news_sum"]))
+                gl = (c.get("ai_golden") if ai_on else None) or c.get("golden") or []
+                if gl:
+                    story.append(Paragraph(f"\u201c{gl[0]}\u201d", s["quote_text"]))
+                story.append(HRFlowable(width="100%", thickness=0.4, color=Palette.RULE,
+                                        spaceAfter=3 * mm, spaceBefore=2 * mm))
 
         story.append(PageBreak())
         return story
@@ -594,6 +636,62 @@ class ReportBuilder:
         story.append(PageBreak())
         return story
 
+    # ========== 每日申论一题 ==========
+    def _shenlun_question_section(self, ai_result):
+        s = self.styles
+        sq = (ai_result or {}).get("shenlun_question") or {}
+        if not sq.get("question"):
+            return []
+
+        story = self._section_header(
+            "📝 每日申论一题",
+            "依据今日热点命制 · 含答题提纲与参考答案要点",
+            bookmark="每日申论一题")
+
+        head = sq.get("topic", "")
+        if sq.get("type"):
+            head = f"【{sq['type']}】{head}"
+        story.append(Paragraph(
+            f'<font color="#1565C0" size=11><b>{head}</b></font>', s["news_item"]))
+        story.append(Spacer(1, 2 * mm))
+
+        if sq.get("material"):
+            story.append(Paragraph(
+                '<font color="#C62828" size=10><b>📄 给定材料</b></font>', s["art_meta"]))
+            story.append(Paragraph(sq["material"], s["bd"]))
+            story.append(Spacer(1, 2.5 * mm))
+
+        story.append(Paragraph(
+            '<font color="#C62828" size=10><b>❓ 作答要求</b></font>', s["art_meta"]))
+        story.append(Paragraph(sq["question"], s["bd"]))
+        story.append(Spacer(1, 2.5 * mm))
+
+        outline = sq.get("outline") or []
+        if outline:
+            story.append(Paragraph(
+                '<font color="#1565C0" size=10><b>🧭 答题提纲</b></font>', s["art_meta"]))
+            rows = [[Paragraph(f'<font color="#C62828"><b>{i:02d}</b></font>  {p}', s["news_sum"])]
+                    for i, p in enumerate(outline, 1)]
+            t = Table(rows, colWidths=[170 * mm])
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), Palette.PRIMARY_LIGHT),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.5, Palette.PRIMARY),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 2.5 * mm))
+
+        if sq.get("reference"):
+            story.append(Paragraph(
+                '<font color="#1565C0" size=10><b>✅ 参考答案要点</b></font>', s["art_meta"]))
+            story.append(Paragraph(sq["reference"], s["bd"]))
+
+        story.append(PageBreak())
+        return story
+
     # ========== 金句汇总 ==========
     def _golden_summary(self, comments, ai_result=None):
         from .config import ContentThresholds
@@ -645,11 +743,11 @@ class ReportBuilder:
             sub = "（AI 已部分覆盖时政考点 + 申论素材）"
         story = self._section_header("💡 每日学习贴士", sub, bookmark="学习贴士")
         tips = [
-            ("📖", "精读 2 篇人民日报评论，注意文章结构和论证方法"),
+            ("📖", "精读「今日精读」全文，对照论证提纲复盘文章结构"),
+            ("📝", "先自己做一遍「每日申论一题」，再看参考答案要点"),
             ("✍️", "摘抄 3–5 个金句，尝试用在申论写作中"),
             ("🔢", "时政新闻中注意数字类、会议类、政策类考点"),
             ("💭", "结合热点思考申论作文的立意和分论点"),
-            ("📝", "每天坚持阅读，培养官方语感和政策思维"),
         ]
         for icon, tip in tips:
             tip_html = f"<b>{icon}</b>  {tip}"
@@ -699,10 +797,11 @@ class ReportBuilder:
                              len(comments), len(news_list), total_golden, ai_result)
         story += self._comments_section(comments, ai_result)
         story += self._news_section(news_list)
-        # AI 板块：每日总评 → 考点（已嵌在新闻里）→ 申论素材 → 金句汇总
+        # AI 板块：每日总评 → 申论素材 → 每日申论一题（考点已嵌在新闻里）
         if ai_result and ai_result.get("enabled"):
             story += self._ai_daily_summary(ai_result)
             story += self._ai_shenlun_material(ai_result)
+            story += self._shenlun_question_section(ai_result)
         story += self._golden_summary(comments, ai_result)
         story += self._tips_section(ai_result)
 

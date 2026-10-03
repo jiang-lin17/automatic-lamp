@@ -17,10 +17,11 @@ from .scraper import fetch_comments, fetch_news
 from .ai_enhancer import run_all_ai_enhance
 from .pdf_builder import ReportBuilder
 from .wecom import WeComPusher, build_markdown_message
+from .dedup import get_seen_store, commit_seen
 
 
 MIN_COMMENTS_REQUIRED = 2   # 评论低于此值视为严重缺失
-MIN_NEWS_REQUIRED = 8       # 新闻低于此值视为不足
+MIN_NEWS_REQUIRED = 6       # 新闻低于此值视为不足
 MAX_RETRY_ROUNDS = 2        # 最多重试 2 次
 
 
@@ -73,6 +74,8 @@ def run() -> Tuple[int, int]:
         )
         fsize_kb = round(os.path.getsize(pdf_path) / 1024, 1)
         log.info("  完成: %.1f KB", fsize_kb)
+        # PDF 生成成功后才把文章记入去重状态，避免生成失败时白白消耗掉它们
+        _mark_seen(comments_with_ai, news_with_points, date_str)
     except Exception as e:
         log.error("PDF 生成失败: %s", e)
         raise
@@ -108,6 +111,15 @@ def run() -> Tuple[int, int]:
         log.warning("  未配置 webhook，跳过推送（PDF 已生成在本地）")
 
     return len(comments), len(news_list)
+
+
+def _mark_seen(comments: list, news_list: list, date_str: str) -> None:
+    """把本次推送过的文章写入跨天去重状态（下一次运行就会跳过它们）。"""
+    store = get_seen_store()
+    urls = [c.get("url", "") for c in comments] + [n.get("url", "") for n in news_list]
+    added = store.mark(urls, date_str)
+    commit_seen()
+    log.info("去重状态：本次新增 %d 条（累计 %d 条）", added, len(store))
 
 
 def _fetch_with_retries() -> Tuple[list, list]:

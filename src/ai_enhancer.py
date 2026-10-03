@@ -30,7 +30,7 @@ _JSON_STRICT_SUFFIX = "请严格以 JSON 格式返回，不要输出多余解释
 
 
 def _extract_json(text: str) -> Optional[dict]:
-    """从任意文本中提取第一个完整的 JSON 对象。
+    """从任意文本中提取第一个完整的 JSON **对象**（顶层不是对象则返回 None）。
 
     各家模型/网关的 JSON mode 行为不一致：
     - DeepSeek / 硅基流动: response_format 强制生效
@@ -42,7 +42,9 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
     # 先尝试直接 parse
     try:
-        return json.loads(text)
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
     except json.JSONDecodeError:
         pass
     # 找第一个完整的 {...} 块（支持嵌套）
@@ -58,9 +60,12 @@ def _extract_json(text: str) -> Optional[dict]:
             if depth == 0 and start != -1:
                 chunk = text[start : i + 1]
                 try:
-                    return json.loads(chunk)
+                    data = json.loads(chunk)
                 except json.JSONDecodeError:
-                    start = -1
+                    data = None
+                if isinstance(data, dict):
+                    return data
+                start = -1
     return None
 
 
@@ -172,50 +177,55 @@ def extract_exam_points_from_news(news_list: List[Dict[str, Any]],
                                    cfg: Optional[AIConfig] = None) -> List[Dict[str, Any]]:
     """功能 1：为每条新闻生成 2-3 条公考考点提示。
 
-    输入：抓取到的新闻列表（前 N 条）
-    输出：每条新闻加 exam_points 字段，如 [{title, exam_points: [str,...]}, ...]
+    一次性把前 N 条新闻打包成**单次**调用（原来是逐条循环 N 次，
+    慢且容易吃掉时间预算）。模型按 index 回填，index 对不上的就留空。
     """
     cfg = cfg or AIConfig()
+    results = [dict(n, exam_points=[]) for n in news_list]
     if not is_ai_available(cfg):
-        return news_list
+        return results
 
     take = news_list[:cfg.max_news_for_points]
+    if not take:
+        return results
+
+    blocks = []
+    for i, n in enumerate(take, 1):
+        blocks.append(
+            f"{i}. 标题：{n.get('title', '')}\n"
+            f"   摘要：{n.get('summary', '')[:120]}"
+        )
     system = (
         "你是一位资深公务员考试研究员，熟悉行测常识和申论考点。"
-        "请从给定新闻中提炼 2-3 条与公考相关的考点提示。"
+        "请为每条新闻提炼 2-3 条与公考相关的考点提示。"
         "考点可以是：政策名词解释、重要会议/文件、关键数字、重大战略、"
         "可用于申论的论点角度等。语言要精准、简洁，每条不超过 25 字。"
     )
+    user = (
+        "以下是今日新闻：\n" + "\n".join(blocks) + "\n\n"
+        '请输出 JSON：{"items": [{"index": 1, "exam_points": ["考点1", "考点2"]}, ...]}\n'
+        "index 必须与上面的编号一致，每条新闻都要有对应项。"
+    )
 
-    results: List[Dict[str, Any]] = []
-    for n in take:
-        title = n.get("title", "")
-        summary = n.get("summary", "")
-        user = f"标题：{title}\n摘要：{summary}\n" \
-               "请输出 JSON：{\"exam_points\": [\"考点1\", \"考点2\", ...]}"
+    raw = _call_llm(system, user, cfg)
+    data = _extract_json(raw) if raw else None
+    if data:
+        items = data.get("items")
+        if isinstance(items, list):
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                try:
+                    idx = int(it.get("index", 0))
+                except (TypeError, ValueError):
+                    continue
+                if not 1 <= idx <= len(results):
+                    continue
+                pts = [str(p).strip() for p in (it.get("exam_points") or []) if str(p).strip()]
+                results[idx - 1]["exam_points"] = pts[:3]
 
-        raw = _call_llm(system, user, cfg)
-        if raw:
-            try:
-                data = _extract_json(raw)
-                points = data.get("exam_points", [])
-                points = [p.strip() for p in points if p.strip()]
-            except json.JSONDecodeError:
-                points = []
-        else:
-            points = []
-
-        enriched = dict(n)
-        enriched["exam_points"] = points[:3]
-        results.append(enriched)
-        log.info("  AI 考点提炼 [%s] → %d 条", title[:30], len(points))
-
-    # 未处理的新闻原样带上
-    for n in news_list[cfg.max_news_for_points:]:
-        enriched = dict(n)
-        enriched["exam_points"] = []
-        results.append(enriched)
-
+    filled = sum(1 for r in results if r["exam_points"])
+    log.info("  AI 考点提炼（单次批量）→ %d/%d 条新闻有考点", filled, len(take))
     return results
 
 
@@ -223,51 +233,56 @@ def ai_select_golden(comments: List[Dict[str, Any]],
                       cfg: Optional[AIConfig] = None) -> List[Dict[str, Any]]:
     """功能 2：用 AI 从评论正文里精选 2-3 条最佳金句 + 一句点评。
 
-    输入：评论列表
-    输出：每条评论加 ai_golden 字段（比规则提取的 golden 更准）+ ai_comment 字段
+    同样是**单次**批量调用（原实现逐篇循环）。模型按 index 回填。
     """
     cfg = cfg or AIConfig()
-    if not is_ai_available(cfg):
-        return comments
+    results = [dict(c, ai_golden=[], ai_comment="") for c in comments]
+    if not is_ai_available(cfg) or not comments:
+        return results
 
+    take = comments[:cfg.max_comments_for_golden]
+    blocks = []
+    for i, c in enumerate(take, 1):
+        content = "".join(c.get("content", []))[:cfg.max_input_chars_per_article]
+        blocks.append(
+            f"{i}. 标题：{c.get('title', '')}\n"
+            f"   摘要：{c.get('summary', '')}\n"
+            f"   正文：{content}"
+        )
     system = (
         "你是一位申论写作专家，擅长从时评文章中提炼金句。"
-        "请从给定文章中选出 2-3 条最适合申论写作引用的精彩语句，"
-        "并写一句 30 字以内的 AI 点评。"
+        "请为每篇文章选出 2-3 条最适合申论写作引用的精彩语句，"
+        "并各写一句 30 字以内的点评。"
         "金句要求：观点鲜明、表达精炼、适合作为论点或过渡。"
     )
+    user = (
+        "以下是今日评论文章：\n\n" + "\n\n".join(blocks) + "\n\n"
+        '请输出 JSON：{"items": [{"index": 1, "ai_golden": ["金句1", "金句2"], '
+        '"ai_comment": "一句点评"}, ...]}\n'
+        "index 必须与上面的编号一致。"
+    )
 
-    results: List[Dict[str, Any]] = []
-    for c in comments:
-        title = c.get("title", "")
-        # 正文截断防止 token 爆
-        content = "".join(c.get("content", []))[:cfg.max_input_chars_per_article]
-        summary = c.get("summary", "")
-        user = (
-            f"标题：{title}\n"
-            f"摘要：{summary}\n"
-            f"正文：{content}\n\n"
-            '请输出 JSON：{"ai_golden": ["金句1", "金句2"], "ai_comment": "一句点评"}'
-        )
+    raw = _call_llm(system, user, cfg)
+    data = _extract_json(raw) if raw else None
+    if data:
+        items = data.get("items")
+        if isinstance(items, list):
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                try:
+                    idx = int(it.get("index", 0))
+                except (TypeError, ValueError):
+                    continue
+                if not 1 <= idx <= len(results):
+                    continue
+                results[idx - 1]["ai_golden"] = [
+                    str(g).strip() for g in (it.get("ai_golden") or []) if str(g).strip()
+                ][:3]
+                results[idx - 1]["ai_comment"] = str(it.get("ai_comment", "")).strip()[:60]
 
-        raw = _call_llm(system, user, cfg)
-        ai_golden: List[str] = []
-        ai_comment: str = ""
-        if raw:
-            try:
-                data = _extract_json(raw)
-                ai_golden = [g.strip() for g in data.get("ai_golden", []) if g.strip()][:3]
-                ai_comment = data.get("ai_comment", "").strip()[:60]
-            except json.JSONDecodeError:
-                pass
-
-        enriched = dict(c)
-        enriched["ai_golden"] = ai_golden
-        enriched["ai_comment"] = ai_comment
-        results.append(enriched)
-        log.info("  AI 金句 [%s] → %d 条金句 + 点评=%s",
-                 title[:30], len(ai_golden), ai_comment[:20] if ai_comment else "空")
-
+    filled = sum(1 for r in results if r["ai_golden"])
+    log.info("  AI 金句（单次批量）→ %d/%d 篇有金句", filled, len(take))
     return results
 
 
@@ -316,19 +331,16 @@ def generate_shenlun_material(comments: List[Dict[str, Any]],
     )
 
     raw = _call_llm(system, user, cfg)
-    if not raw:
+    data = _extract_json(raw) if raw else None
+    if not data:
         return empty_result
-    try:
-        data = _extract_json(raw)
-        return {
-            "topic": data.get("topic", "").strip(),
-            "opening": data.get("opening", "").strip()[:600],
-            "transition": data.get("transition", "").strip()[:400],
-            "conclusion": data.get("conclusion", "").strip()[:300],
-            "key_words": [k.strip() for k in data.get("key_words", []) if k.strip()][:8],
-        }
-    except json.JSONDecodeError:
-        return empty_result
+    return {
+        "topic": str(data.get("topic", "")).strip(),
+        "opening": str(data.get("opening", "")).strip()[:600],
+        "transition": str(data.get("transition", "")).strip()[:400],
+        "conclusion": str(data.get("conclusion", "")).strip()[:300],
+        "key_words": [str(k).strip() for k in (data.get("key_words") or []) if str(k).strip()][:8],
+    }
 
 
 def daily_summary(comments: List[Dict[str, Any]],
@@ -359,16 +371,73 @@ def daily_summary(comments: List[Dict[str, Any]],
         '\n\n请输出 JSON：{"headline": "...", "summary": "..."}'
 
     raw = _call_llm(system, user, cfg)
-    if not raw:
+    data = _extract_json(raw) if raw else None
+    if not data:
         return empty_result
-    try:
-        data = _extract_json(raw)
-        return {
-            "headline": data.get("headline", "").strip()[:80],
-            "summary": data.get("summary", "").strip()[:300],
-        }
-    except json.JSONDecodeError:
+    return {
+        "headline": str(data.get("headline", "")).strip()[:80],
+        "summary": str(data.get("summary", "")).strip()[:300],
+    }
+
+
+def generate_shenlun_question(comments: List[Dict[str, Any]],
+                               news_list: List[Dict[str, Any]],
+                               cfg: Optional[AIConfig] = None) -> Dict[str, Any]:
+    """功能 5：依据当日素材，出一道申论模拟题。
+
+    输出结构：
+    {
+        "topic": "题目主题（一句话）",
+        "type": "题型（归纳概括/综合分析/提出对策/贯彻执行/文章写作）",
+        "material": "给定材料（150-250字）",
+        "question": "作答要求（含字数）",
+        "outline": ["答题要点/分论点1", ...],   # 3-4 条
+        "reference": "参考答案要点（150-250字）",
+    }
+    """
+    cfg = cfg or AIConfig()
+    empty_result: Dict[str, Any] = {
+        "topic": "", "type": "", "material": "",
+        "question": "", "outline": [], "reference": "",
+    }
+    if not is_ai_available(cfg):
         return empty_result
+
+    comment_titles = [c.get("title", "") for c in comments[:3]]
+    news_titles = [n.get("title", "") for n in news_list[:8]]
+    summaries = " | ".join(
+        [c.get("summary", "") for c in comments[:2]] +
+        [n.get("summary", "") for n in news_list[:3] if n.get("summary")]
+    )
+
+    system = (
+        "你是一位申论命题与阅卷专家。请依据给定的当日时政素材，"
+        "命制一道贴近省考难度的申论模拟题（题型在归纳概括、综合分析、"
+        "提出对策、贯彻执行、文章写作中择一）。"
+        "必须给出：一个给定材料（150-250字）、明确的作答要求（含字数）、"
+        "3-4 条答题要点提纲、以及一段参考答案要点（150-250字）。"
+        "材料与题目要能自洽，不要出现与材料无关的提问。"
+    )
+    user = (
+        f"今日人民日报评论标题：{comment_titles}\n"
+        f"今日时政热点标题：{news_titles}\n"
+        f"综合摘要：{summaries}\n\n"
+        '请输出 JSON：{"topic": "...", "type": "...", "material": "...",'
+        ' "question": "...", "outline": ["...", "..."], "reference": "..."}'
+    )
+
+    raw = _call_llm(system, user, cfg)
+    data = _extract_json(raw) if raw else None
+    if not data:
+        return empty_result
+    return {
+        "topic": str(data.get("topic", "")).strip()[:120],
+        "type": str(data.get("type", "")).strip()[:30],
+        "material": str(data.get("material", "")).strip()[:800],
+        "question": str(data.get("question", "")).strip()[:400],
+        "outline": [str(o).strip() for o in (data.get("outline") or []) if str(o).strip()][:5],
+        "reference": str(data.get("reference", "")).strip()[:800],
+    }
 
 
 # ========== 顶层编排 ==========
@@ -376,17 +445,18 @@ def daily_summary(comments: List[Dict[str, Any]],
 def run_all_ai_enhance(comments: List[Dict[str, Any]],
                         news_list: List[Dict[str, Any]],
                         cfg: Optional[AIConfig] = None) -> Dict[str, Any]:
-    """一键跑完全部 4 个 AI 功能。任何一个失败都不影响其他。
+    """一键跑完全部 AI 功能。任何一个失败都不影响其他。
 
-    带总超时保护（默认 480 秒 = 8 分钟），超预算后剩余功能自动跳过，
-    避免整个 workflow 被某个慢调用拖死。
+    5 个阶段各一次调用（考点/金句已批量化，不再逐条循环），
+    带总超时保护，超预算后剩余功能自动跳过，避免 workflow 被慢调用拖死。
 
     返回：
     {
         "enabled": bool,
-        "news_with_points": [...],        # 新闻 + exam_points
+        "news_with_points": [...],         # 新闻 + exam_points
         "comments_with_ai": [...],         # 评论 + ai_golden + ai_comment
         "shenlun_material": {...},
+        "shenlun_question": {...},         # 每日一道申论模拟题
         "daily_summary": {...},
         "timed_out": bool,                 # 是否触发了超时保护
     }
@@ -404,6 +474,10 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
             "topic": "", "opening": "", "transition": "",
             "conclusion": "", "key_words": [],
         },
+        "shenlun_question": {
+            "topic": "", "type": "", "material": "",
+            "question": "", "outline": [], "reference": "",
+        },
         "daily_summary": {"headline": "", "summary": ""},
         "timed_out": False,
     }
@@ -416,8 +490,9 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
 
     log.info("🤖 AI 增强启用，model=%s", cfg.model)
 
-    # 总时间预算（考点 6 条 + 金句 5 篇 + 申论 + 总评 ≈ 13 次调用，
-    # 按单次 35s 估算约 7.5 分钟，留出余量；workflow 超时为 20 分钟）
+    # 总时间预算：考点/金句已批量化，共 5 次调用
+    # （考点、金句、申论素材、申论题、总评），按单次 60s 估算约 5 分钟，
+    # 留出余量；workflow 超时为 20 分钟。
     TOTAL_BUDGET = 600  # 10 分钟
     start = _t.monotonic()
     ok = True
@@ -462,7 +537,14 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
         except Exception as e:
             log.warning("申论素材阶段异常：%s", e)
 
-    # 功能 4
+    # 功能 4：每日一道申论题
+    if ok and _check_budget("申论模拟题"):
+        try:
+            result["shenlun_question"] = generate_shenlun_question(comments, news_list, cfg)
+        except Exception as e:
+            log.warning("申论模拟题阶段异常：%s", e)
+
+    # 功能 5：每日总评
     if ok and _check_budget("每日总评"):
         try:
             result["daily_summary"] = daily_summary(comments, news_list, cfg)
@@ -471,13 +553,16 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
 
     elapsed = _t.monotonic() - start
     sp = result["shenlun_material"]
+    sq = result["shenlun_question"]
     ds = result["daily_summary"]
     n_points = sum(1 for n in result["news_with_points"] if n.get("exam_points"))
     n_golden = sum(1 for c in result["comments_with_ai"] if c.get("ai_golden"))
-    log.info("✅ AI 完成（耗时 %.0fs，预算 %ds）：考点=%d条, 金句=%d篇, 申论素材=%s, 总评=%s%s",
+    log.info("✅ AI 完成（耗时 %.0fs，预算 %ds）：考点=%d条, 金句=%d篇, 申论素材=%s, "
+             "申论题=%s, 总评=%s%s",
              elapsed, TOTAL_BUDGET,
              n_points, n_golden,
              "OK" if sp.get("topic") else "FAIL",
+             "OK" if sq.get("question") else "FAIL",
              "OK" if ds.get("headline") else "FAIL",
              " [⏱️ 超时]" if result.get("timed_out") else "")
 
