@@ -215,16 +215,18 @@ class AIConfig:
     model: str = os.environ.get("AI_MODEL", "deepseek/deepseek-chat")
     # 可选：自定义 base_url（硅基流动等兼容网关用）
     base_url: str = os.environ.get("AI_BASE_URL", "")
-    # 调用超时秒数。方舟/gpt 类接口单次响应常在 30~60s，30s 会把「慢但能成功」的
-    # 请求直接判超时，故放宽到 90s
-    timeout: int = 90
+    # 调用超时秒数。方舟/gpt 类接口单次响应常在 30~60s，海外 runner 访问国内网关
+    # 更慢；实测 90s 仍会把「慢但能成功」的请求判超时（金句/申论素材两次卡在 90s），
+    # 故放宽到 150s
+    timeout: int = 150
     # litellm 层重试次数。置 0 关掉 OpenAI SDK 默认的 2 次内部重试，
     # 否则一次失败最坏耗时 = timeout × 3，会瞬间吃掉整个时间预算
     num_retries: int = 0
     # 温度（0=稳定，1=创意）
     temperature: float = 0.3
-    # 单篇最大输入字符（防止 token 爆）
-    max_input_chars_per_article: int = 4000
+    # 单篇最大输入字符（防止 token 爆）。金句精选是「多篇打包成一次调用」，
+    # 3 篇 × 4000 字会让 prompt 过大、响应变慢（实测因此超时），降到 2000。
+    max_input_chars_per_article: int = 2000
     # 最多处理多少条新闻做考点提炼（直接决定 AI 调用次数与总耗时）
     max_news_for_points: int = 6
     # 最多处理多少篇评论做金句精选（单次批量调用，全塞进去会超 token）

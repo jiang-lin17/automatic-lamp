@@ -491,9 +491,9 @@ def run_all_ai_enhance(comments: List[Dict[str, Any]],
     log.info("🤖 AI 增强启用，model=%s", cfg.model)
 
     # 总时间预算：考点/金句已批量化，共 5 次调用
-    # （考点、金句、申论素材、申论题、总评），按单次 60s 估算约 5 分钟，
-    # 留出余量；workflow 超时为 20 分钟。
-    TOTAL_BUDGET = 600  # 10 分钟
+    # （考点、金句、申论素材、申论题、总评）。单次 timeout=150s，最坏 5×150=750s，
+    # 预算给到 900s 才不会提前跳过后面阶段；workflow 超时为 20 分钟（1200s）。
+    TOTAL_BUDGET = 900  # 15 分钟
     start = _t.monotonic()
     ok = True
 

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20        # 从 10 → 20，AI 增强多了 4 次调用留足余量
+    timeout-minutes: 30        # AI 单次调用放宽到 150s（5 次最坏 750s）+ 安装/抓取，留足余量
 
     steps:
       - name: Checkout
