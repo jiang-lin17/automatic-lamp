@@ -247,7 +247,9 @@ class ReportBuilder:
         countdown_cell = [Paragraph(f"<b>{days_left}</b>", days_big_style),
                           Paragraph("天 · 距笔试倒计时", days_unit_style),
                           Paragraph(f"备考进度 <b>{pct:.1f}%</b>  ·  共 {total_days} 天", progress_pct_style)]
-        t_countdown = Table([countdown_cell], colWidths=[150 * mm])
+        # 每行一个 cell（3 行 1 列）。若写成 Table([countdown_cell]) 会变成「1 行 3 列」，
+        # 但只提供了 1 个列宽，reportlab 会丢弃第 1、3 个 cell —— 倒计时数字就会整块消失。
+        t_countdown = Table([[c] for c in countdown_cell], colWidths=[150 * mm])
         t_countdown.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), Palette.PRIMARY_LIGHT),
             ("BOX", (0, 0), (-1, -1), 1.5, Palette.PRIMARY),
